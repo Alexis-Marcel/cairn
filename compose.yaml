@@ -1,6 +1,6 @@
-# Cairn next to Fundarr. Open it once to link it (Fundarr → Apps → Cairn
-# gives the token); the link is kept in ./data. Cairn has no sign-in of its
-# own: keep it on localhost, or put a reverse proxy with sign-in in front.
+# Cairn. Everything is kept in ./data/cairn.db. Cairn has no sign-in of its
+# own: keep it on localhost, or put a reverse proxy with sign-in in front
+# (only POST /api/fundarr/notify may skip it, for Fundarr's notifications).
 #
 # Docker makes ./data as root when it is missing; Cairn runs as 65532:
 #   mkdir -p data && sudo chown 65532:65532 data
@@ -12,7 +12,7 @@ services:
       - ./data:/data
     ports:
       - "127.0.0.1:8080:8080"
-    # Or fix the link here, and the page to change it goes away:
+    # Optional: sync with a Fundarr, fixed here instead of in Réglages.
     # environment:
     #   FUNDARR_URL: http://fundarr:9494
     #   FUNDARR_TOKEN: fdr_…

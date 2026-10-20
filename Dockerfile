@@ -12,7 +12,8 @@ RUN npm run build
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS server
 ARG TARGETOS TARGETARCH VERSION=dev
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
+RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY web/embed.go ./web/
@@ -23,7 +24,7 @@ RUN mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=server /out/cairn /cairn
-# Where the link to Fundarr is kept (cairn.json), writable by nonroot (65532).
+# The database (cairn.db), writable by nonroot (65532).
 COPY --from=server --chown=65532:65532 --chmod=700 /out/data /data
 ENV CAIRN_ADDR=:8080 CAIRN_DATA=/data
 VOLUME /data
