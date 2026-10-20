@@ -73,6 +73,9 @@ func New(dir string, env Conn, ttl time.Duration) (*Setup, error) {
 		}
 		return s, nil
 	}
+	if err := writable(dir); err != nil {
+		slog.Warn("data folder not writable: the link cannot be saved", "dir", dir, "err", err)
+	}
 	c, err := Load(dir)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
@@ -311,6 +314,19 @@ func Save(dir string, c Conn) error {
 		return err
 	}
 	return os.Rename(f.Name(), filepath.Join(dir, File))
+}
+
+// writable tells early what Save would find out late.
+func writable(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, ".cairn-*")
+	if err != nil {
+		return err
+	}
+	f.Close()
+	return os.Remove(f.Name())
 }
 
 // Remove forgets the saved connection; none is fine.
