@@ -1,16 +1,18 @@
 # Cairn
 
-Where my crypto stands: what it is worth, what I put in, what it became, and how. A small, opinionated personal app, crypto only for now: you give it your operations, it does the rest.
+Where my investments stand, crypto, stocks and ETFs: what they are worth, what I put in, what they became, and how. A small, opinionated personal app: you give it your operations, it does the rest.
 
 ![Accueil](docs/screenshots/accueil-clair.png)
 
-- **Accueil**: the value and its change over 7J, 1M, YTD, 1A or Tout, in euros and as a share of what was at stake (the opening value plus money put in since); a chart to scrub with a finger (value against money put in, or performance time-weighted so deposits are not gains); gain, yearly return (money-weighted), net contributions, rewards, fees; each coin with its month; allocation by coin or account, stablecoins apart.
-- **Statistiques** (on Accueil): monthly returns year by year, money put in each month, cumulative rewards, what came from contributions, rewards and the market, gain by coin.
-- **Actifs**: every coin, held or sold. One page each: its price with my average cost and my buys and sales, the quantity held, unrealized and realized gain, rewards, fees, its operations.
-- **Activité**: every operation by month, by account or coin, searchable. Add, change or remove those entered by hand or imported.
-- **Impôts** (a card on Accueil when a declaration has something, and in the footer): one year of disposals as 2086 lines, totals, estimated tax, a CSV to copy into the form.
+- **Accueil**: the value and its change over 7J, 1M, YTD, 1A or Tout, in euros and as a share of what was at stake (the opening value plus money put in since); a chart to scrub with a finger (value against money put in, or performance time-weighted so deposits are not gains); gain, yearly return (money-weighted), net contributions, income (staking, dividends, interest), fees; each asset with its month; allocation by asset, by class (crypto, ETF, stocks, stablecoins) or by account.
+- **Statistiques** (on Accueil): monthly returns year by year, money put in each month, cumulative income, what came from contributions, income and the market, gain by asset.
+- **Actifs**: every coin, stock and ETF, held or sold, by name (a security's ISIN is a detail on its page). One page each: its price with my average cost and my buys and sales, the quantity held, unrealized and realized gain, rewards or dividends, fees, its operations.
+- **Activité**: every operation by month, by account or asset, searchable by name. Add, change or remove those entered by hand or imported.
+- **Impôts** (a card on Accueil when a declaration has something, and in the footer): one year of crypto disposals as 2086 lines, totals, estimated tax, a CSV to copy into the form. Stocks and ETFs are left out.
 
-One Go binary serves the UI, keeps everything in SQLite (`/data/cairn.db`) and computes the portfolio itself, with [Fundarr](https://github.com/Alexis-Marcel/fundarr)'s engine as a library (average cost per account, transfers carrying their cost, the 2086 method). Daily prices come from Binance and OKX public market data and the ECB's rates (through Frankfurter): no key, no account, each day asked once and kept.
+**How the figures count.** Cash is not part of the value: euros sitting on an account (Trade Republic's, an exchange's) are outside the portfolio, so a bank transfer in, a card payment or a cash withdrawal changes nothing; money counts as put in when it buys something and as taken out when a sale brings it back. Dividends, net of the tax withheld, come back out the same way, so they are part of the gain, the yearly return and the time-weighted performance. Interest on cash is income too, shown with the rest, but outside the gain (the cash that earns it is not in the value). A broker's accounts from Fundarr stay apart (Trade Republic CTO and PEA).
+
+One Go binary serves the UI, keeps everything in SQLite (`/data/cairn.db`) and computes the portfolio itself, with [Fundarr](https://github.com/Alexis-Marcel/fundarr)'s engine as a library (average cost per account, transfers carrying their cost, the 2086 method). Daily prices come from Binance and OKX public market data for crypto, justETF (Yahoo Finance as a fallback) for stocks and ETFs by ISIN, and the ECB's rates (through Frankfurter): no key, no account, each day asked once and kept. A security no source knows is valued at its last trade.
 
 **Cairn has no sign-in of its own.** Keep it on localhost, or put it behind a reverse proxy that signs you in (Authentik, Authelia, oauth2-proxy…). Never straight on the internet: whoever opens it sees and edits the portfolio.
 
@@ -26,7 +28,7 @@ or see [`compose.yaml`](compose.yaml), then open http://localhost:8080. With a b
 
 Cairn opens on an empty Accueil that offers all three; they mix freely.
 
-1. **By hand**: Ajouter. Achat, vente, échange, dépôt, retrait, récompense, transfert entre comptes, frais. A date, an account (or a new one), a coin, a quantity; the price of a purchase or a sale is filled in from the day's close.
+1. **By hand**: Ajouter. Achat, vente, échange, dépôt, retrait, récompense, dividende, transfert entre comptes, frais. A date, an account (or a new one), a coin or a stock or ETF (by name, or by its ISIN, checked, with its name the first time), a quantity; the price of a purchase or a sale is filled in from the day's close.
 2. **A CSV file**: Activité → Importer. Each row is checked and shown before anything is added; importing the same file again adds nothing.
 3. **Fundarr** (optional): Réglages → Synchroniser avec Fundarr. Cairn keeps a copy of Fundarr's history through its [changes feed](https://github.com/Alexis-Marcel/fundarr/blob/main/docs/api.md#get-apiv1changes), every 15 minutes, one account per Fundarr source. Those operations are read-only in Cairn: change them in Fundarr.
 
@@ -47,18 +49,21 @@ Or Cairn's template, served at `/api/import/modele.csv` (Importer → Téléchar
 | Column | |
 |---|---|
 | `date` | `2024-03-01`, `01/03/2024` or an RFC 3339 time |
-| `type` | `achat`, `vente`, `echange`, `depot`, `retrait`, `recompense`, `frais` (or `buy`, `sell`, `swap`, `deposit`, `withdrawal`, `reward`, `fee`) |
+| `type` | `achat`, `vente`, `echange`, `depot`, `retrait`, `recompense`, `dividende`, `interets`, `frais` (or `buy`, `sell`, `swap`, `deposit`, `withdrawal`, `reward`, `dividend`, `interest`, `fee`) |
 | `actif`, `quantite` | `BTC`, `0,01` (`EUR` for cash deposits and withdrawals) |
-| `prix` | `achat`, `vente`: the total in euros |
+| `isin`, `nom` | a stock or an ETF: `IE00B4L5Y983`, `iShares Core MSCI World` (the ISIN may also go in `actif`) |
+| `prix` | `achat`, `vente`: the total in euros; `dividende`: the amount received |
 | `frais` | in euros, optional |
 | `recu`, `quantite_recue` | `echange`: the coin received and how much |
 | `compte`, `note` | optional; without `compte`, pick one account for the whole file |
 
 ```csv
-date,type,actif,quantite,prix,frais,recu,quantite_recue,compte,note
-2024-03-01,achat,BTC,0.01,550,1.5,,,Binance,
-2024-05-10,echange,BTC,0.005,,,ETH,0.08,Binance,
-2024-06-15,recompense,ETH,0.002,,,,,Binance,staking
+date,type,actif,quantite,prix,frais,recu,quantite_recue,compte,note,isin,nom
+2024-03-01,achat,BTC,0.01,550,1.5,,,Binance,,,
+2024-05-10,echange,BTC,0.005,,,ETH,0.08,Binance,,,
+2024-06-15,recompense,ETH,0.002,,,,,Binance,staking,,
+2024-07-01,achat,,3,300,1,,,Trade Republic,,IE00B4L5Y983,iShares Core MSCI World
+2024-12-10,dividende,,,4.2,,,,Trade Republic,,FR0000120271,TotalEnergies
 ```
 
 ## Settings
@@ -76,7 +81,7 @@ date,type,actif,quantite,prix,frais,recu,quantite_recue,compte,note
 
 ## Develop
 
-Go 1.26 and Node 24. Fundarr's demo gives a made-up portfolio (2023 to today, three sources, rewards, transfers, sales) to sync from; run it from a Fundarr clone:
+Go 1.26 and Node 24. Fundarr's demo gives a made-up portfolio (2023 to today: three crypto sources with rewards, transfers and sales, and Trade Republic with ETFs on a CTO and a PEA, a stock and its dividends) to sync from; run it from a Fundarr clone (v0.2.0 or later):
 
 ```sh
 FUNDARR_DEMO=1 FUNDARR_ADDR=127.0.0.1:9599 go run ./cmd/fundarr   # in fundarr/, token fdr_demo
