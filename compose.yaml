@@ -1,0 +1,11 @@
+# Cairn next to Fundarr. Put a reverse proxy with sign-in in front of it:
+# Cairn has none of its own.
+services:
+  cairn:
+    image: ghcr.io/alexis-marcel/cairn:latest
+    restart: unless-stopped
+    environment:
+      FUNDARR_URL: http://fundarr:9494
+      FUNDARR_TOKEN: ${FUNDARR_TOKEN:?a read token from Fundarr, Settings → Export and API}
+    ports:
+      - "127.0.0.1:8080:8080"
