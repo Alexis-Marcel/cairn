@@ -48,3 +48,7 @@ cd web && npm install && npm run dev           # http://localhost:5173
 ## Credits
 
 Coin icons: [cryptocurrency-icons](https://github.com/spothq/cryptocurrency-icons), CC0. Typeface: [Geologica](https://fonts.google.com/specimen/Geologica), OFL.
+
+## Licence
+
+AGPL-3.0. Voir [LICENSE](LICENSE).
