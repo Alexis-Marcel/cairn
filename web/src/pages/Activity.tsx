@@ -1,18 +1,16 @@
-// Opérations: every activity, newest first, whatever its origin. Filter by
+// Activité: every operation, newest first, whatever its origin. Filter by
 // account or coin, search, open one to change it.
 
 import { useEffect, useMemo, useState } from "react";
 import { get, useLoad, type Account, type Op, type Ops } from "../api";
-import { Coin } from "../components/Coin";
-import { Failed, Loading } from "../components/State";
-import { date, eur, num } from "../format";
-import { KIND, ORIGIN, detail, moves } from "../ops";
+import { OpList } from "../components/OpList";
+import { Failed, SkelRows } from "../components/State";
 
 const PAGE = 50;
 
-export function Operations({ rev, onOpen, onImport }: { rev: number; onOpen: (op: Op) => void; onImport: () => void }) {
+export function Activity({ rev, onOpen, onImport }: { rev: number; onOpen: (op: Op) => void; onImport: () => void }) {
   const [account, setAccount] = useState("");
-  const [asset, setAsset] = useState("");
+  const [asset, setAsset] = useState(() => new URLSearchParams(location.search).get("actif")?.toUpperCase() ?? "");
   const [q, setQ] = useState("");
   const [search, setSearch] = useState("");
   const [pages, setPages] = useState(1);
@@ -56,14 +54,15 @@ export function Operations({ rev, onOpen, onImport }: { rev: number; onOpen: (op
   const filtered = !!(account || asset || search);
 
   return (
-    <div className="ops">
+    <div className="activity">
       <div className="page-head">
-        <h1>Opérations</h1>
-        <div className="actions">
-          <button type="button" className="btn" onClick={onImport}>
-            Importer un CSV
-          </button>
-        </div>
+        <h1>Activité</h1>
+        <button type="button" className="btn quiet" onClick={onImport}>
+          <svg viewBox="0 0 16 16" aria-hidden>
+            <path d="M8 10V2m0 0 3.5 3.5M8 2 4.5 5.5M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2" />
+          </svg>
+          Importer
+        </button>
       </div>
 
       <div className="filters">
@@ -75,7 +74,7 @@ export function Operations({ rev, onOpen, onImport }: { rev: number; onOpen: (op
           <span className="sr">Rechercher</span>
           <input type="search" placeholder="Rechercher" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
-        <label>
+        <label className={account ? "pick on" : "pick"}>
           <span className="sr">Compte</span>
           <select value={account} onChange={(e) => setAccount(e.target.value)}>
             <option value="">Tous les comptes</option>
@@ -86,7 +85,7 @@ export function Operations({ rev, onOpen, onImport }: { rev: number; onOpen: (op
             ))}
           </select>
         </label>
-        <label>
+        <label className={asset ? "pick on" : "pick"}>
           <span className="sr">Actif</span>
           <select value={asset} onChange={(e) => setAsset(e.target.value)}>
             <option value="">Tous les actifs</option>
@@ -102,7 +101,7 @@ export function Operations({ rev, onOpen, onImport }: { rev: number; onOpen: (op
       {list.error && !list.data ? (
         <Failed error={list.error} retry={list.reload} />
       ) : !list.data ? (
-        <Loading />
+        <SkelRows rows={8} />
       ) : items.length === 0 ? (
         <p className="empty">{filtered ? "Aucune opération ne correspond." : "Aucune opération pour l'instant."}</p>
       ) : (
@@ -110,60 +109,7 @@ export function Operations({ rev, onOpen, onImport }: { rev: number; onOpen: (op
           <p className="count muted">
             {total} opération{total > 1 ? "s" : ""}
           </p>
-          <table className="table num op-table">
-            <thead>
-              <tr>
-                <th scope="col" className="wide">
-                  Date
-                </th>
-                <th scope="col">Opération</th>
-                <th scope="col" className="mid">
-                  Compte
-                </th>
-                <th scope="col">Quantité</th>
-                <th scope="col" className="wide">
-                  Valeur
-                </th>
-                <th scope="col" className="mid">
-                  <span className="sr">Origine</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((op) => {
-                const m = moves(op);
-                return (
-                  <tr key={op.id} onClick={() => onOpen(op)} className="clickable">
-                    <td className="wide date">{date(op.time)}</td>
-                    <th scope="row">
-                      <button type="button" className="row-btn" onClick={(e) => (e.stopPropagation(), onOpen(op))}>
-                        <span className="asset">
-                          <Coin symbol={m.symbol} />
-                          <span>
-                            <span className="sym">{KIND[op.kind]}</span>
-                            <span className="sub op-sub">
-                              <span className="op-acc">{detail(op)} · </span>
-                              {date(op.time)}
-                            </span>
-                          </span>
-                        </span>
-                      </button>
-                    </th>
-                    <td className="mid muted left">{detail(op)}</td>
-                    <td>
-                      <span className={m.text.startsWith("+") ? "up" : ""}>{m.text}</span>
-                      {m.other && <span className="sub always up">{m.other}</span>}
-                      {op.value && <span className="sub op-val">{eur(num(op.value))}</span>}
-                    </td>
-                    <td className="wide muted">{op.value ? eur(num(op.value)) : "–"}</td>
-                    <td className="mid">
-                      <span className={`badge ${op.origin}`}>{ORIGIN[op.origin]}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <OpList items={items} onOpen={onOpen} />
           {items.length < total && (
             <button type="button" className="btn more" onClick={loadMore} disabled={loadingMore}>
               {loadingMore ? "Chargement…" : `Voir plus (${total - items.length})`}

@@ -120,34 +120,6 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   return resp.json();
 }
 
-/**
- * The history, one point a day; a week when that is too many for Fundarr
- * (it answers 422 past 3700 points, ten years of days).
- */
-export async function history(signal?: AbortSignal): Promise<History> {
-  try {
-    return await get<History>("portfolio/history?step=day", signal);
-  } catch (e) {
-    if (e instanceof ApiError && e.status === 422) return get<History>("portfolio/history?step=week", signal);
-    throw e;
-  }
-}
-
-/** Every activity since a time, following the pages. */
-export async function activitiesSince(since: Date, signal?: AbortSignal): Promise<Activity[]> {
-  const out: Activity[] = [];
-  let after = "";
-  for (let page = 0; page < 20; page++) {
-    const q = new URLSearchParams({ since: since.toISOString(), limit: "5000" });
-    if (after) q.set("after", after);
-    const r = await get<Activities>("activities?" + q, signal);
-    out.push(...r.activities);
-    if (!r.next || r.activities.length === 0) break;
-    after = r.next;
-  }
-  return out;
-}
-
 export interface Loaded<T> {
   data?: T;
   error?: string;
@@ -286,3 +258,64 @@ export async function send<T>(method: "POST" | "PUT" | "PATCH" | "DELETE", path:
 }
 
 export const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+export type PeriodKey = "7J" | "1M" | "YTD" | "1A" | "Tout";
+
+/** GET /api/overview: the value day by day, each period's change, the totals. */
+export interface Overview {
+  currency: string;
+  at: string;
+  step: "day" | "week";
+  /** d: day, v: value, i: invested, x: time-weighted index (1 at the start). */
+  points: { d: string; v: number; i: number; x: number }[];
+  periods: { key: PeriodKey; from: number; start: number; end: number; gain: number; twr: number }[];
+  total: {
+    value: number;
+    invested: number;
+    gain: number;
+    realized: number;
+    unrealized: number;
+    rewards: number;
+    fees: number;
+    stable: number;
+    xirr: number | null;
+  };
+  unpriced: Asset[];
+}
+
+/** One coin's results. */
+export interface CoinStat {
+  asset: Asset;
+  qty: string;
+  price: number;
+  value: number;
+  cost: number;
+  avgCost: number;
+  share: number;
+  unrealized: number;
+  realized: number;
+  rewards: number;
+  fees: number;
+  gain: number;
+  pct?: number;
+  held: boolean;
+  stable?: boolean;
+  first: string;
+  spark?: number[];
+}
+
+/** GET /api/stats: month by month, and each coin. */
+export interface Stats {
+  at: string;
+  months: { m: string; ret: number; in: number; out: number; rewards: number; value: number; invested: number; earned: number }[];
+  assets: CoinStat[];
+}
+
+/** GET /api/assets/{symbol}: one coin day by day. */
+export interface AssetDetail {
+  at: string;
+  step: "day" | "week";
+  coin: CoinStat;
+  points: { d: string; p: number; q: number; avg?: number }[];
+  markers: { d: string; buy: boolean; qty: string; value: number; price: number }[];
+}

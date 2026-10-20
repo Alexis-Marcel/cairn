@@ -73,3 +73,14 @@ export function ago(iso: string, now = Date.now()) {
   if (s < 86400) return `il y a ${Math.floor(s / 3600)} h`;
   return "le " + date(iso);
 }
+
+const dMonthLong = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" });
+/** mars 2024 */
+export const monthLong = (t: number) => dMonthLong.format(t);
+
+/** A unit price: cents, or the digits that matter for coins worth little. */
+export function price(v: number) {
+  const a = Math.abs(v);
+  if (a >= 1) return eur(v, { cents: a < 10000 });
+  return minus(nf({ style: "currency", currency: "EUR", maximumSignificantDigits: 4 }).format(v));
+}

@@ -1,281 +1,450 @@
-// Accueil: where I stand. The total, the progression since the start, where
-// it sits, each asset, and this month's money in.
+// Accueil: the value and how it moved over a period (the big figure is the
+// chart's readout), the key figures, the coins and where the value sits,
+// then the statistics.
 
-import { useMemo, useRef, useState } from "react";
-import { activitiesSince, get, history, useLoad, type Portfolio } from "../api";
-import { Allocation, type Part } from "../components/Allocation";
-import { Chart, type Pt } from "../components/Chart";
+import { useMemo, useState } from "react";
+import { get, useLoad, type CoinStat, type Overview, type PeriodKey, type Portfolio, type Stats, type TaxFR } from "../api";
+import { Allocation } from "../components/Allocation";
 import { Coin } from "../components/Coin";
+import { Heatmap } from "../components/Heatmap";
+import { LineChart } from "../components/LineChart";
+import { MonthBars } from "../components/MonthBars";
+import { Num, useTween } from "../components/Num";
+import { Ranking } from "../components/Ranking";
 import { Segmented } from "../components/Segmented";
-import { Failed, Loading } from "../components/State";
-import { date, eur, num, pct, qty, time, tone } from "../format";
+import { Spark } from "../components/Spark";
+import { SplitArea } from "../components/SplitArea";
+import { Failed, Skel, SkelRows, Slow } from "../components/State";
+import { date, day, eur, eurShort, monthLong, pct, qty, time, tone } from "../format";
+import { utc } from "../lib/chart";
+import { remember, remembered } from "../lib/remember";
 
-type Period = "1M" | "1A" | "Tout";
-const PERIODS: { value: Period; label: string }[] = [
+export const PERIODS: { value: PeriodKey; label: string }[] = [
+  { value: "7J", label: "7J" },
   { value: "1M", label: "1M" },
+  { value: "YTD", label: "YTD" },
   { value: "1A", label: "1A" },
   { value: "Tout", label: "Tout" },
 ];
+export const SINCE: Record<PeriodKey, string> = {
+  "7J": "en 7 jours",
+  "1M": "en 1 mois",
+  YTD: "depuis janvier",
+  "1A": "en 1 an",
+  Tout: "depuis le début",
+};
 
-// The chosen period and view are remembered in this browser, if it lets us.
-function remembered<T extends string>(key: string, def: T, ok: readonly T[]): T {
-  try {
-    const v = localStorage.getItem("cairn." + key) as T | null;
-    return v && ok.includes(v) ? v : def;
-  } catch {
-    return def;
-  }
-}
-function remember(key: string, v: string) {
-  try {
-    localStorage.setItem("cairn." + key, v);
-  } catch {
-    /* private window: not kept */
-  }
-}
+type View = "value" | "perf";
 
-const utc = (d: string) => Date.parse(d + "T00:00:00Z");
-
-/** The points of a period; "Tout" keeps one a week when there are many. */
-function slice(all: Pt[], period: Period): Pt[] {
-  if (!all.length) return all;
-  const last = new Date(all[all.length - 1].t);
-  const y = last.getUTCFullYear();
-  const m = last.getUTCMonth();
-  const d = last.getUTCDate();
-  if (period === "1M") return all.filter((p) => p.t >= Date.UTC(y, m - 1, d));
-  if (period === "1A") return all.filter((p) => p.t >= Date.UTC(y - 1, m, d));
-  if (all.length <= 900) return all;
-  return all.filter((p, n) => n === 0 || n === all.length - 1 || new Date(p.t).getUTCDay() === 0);
+/** Up or down, as a small triangle. */
+export function Arrow({ n }: { n: number }) {
+  return (
+    <svg className={`arrow ${n < 0 ? "down" : "up"}`} viewBox="0 0 12 12" aria-hidden>
+      <path d={n < 0 ? "M6 9.5 2 4.5h8z" : "M6 2.5 10 7.5H2z"} />
+    </svg>
+  );
 }
 
-/** A big amount, the unit set apart. */
-function Big({ text }: { text: string }) {
-  const m = text.match(/^(.*?)\s*€$/);
-  return m ? (
+/** A big amount, rolling to its value; the euro sign set apart. */
+export function BigEuros({ value, instant }: { value: number; instant?: boolean }) {
+  const v = useTween(value, instant);
+  const text = eur(v, { cents: true });
+  const m = text.match(/^(.*?)(,\d\d)?\s*€$/);
+  if (!m) return <>{text}</>;
+  return (
     <>
       {m[1]}
+      {m[2] && <span className="cents">{m[2]}</span>}
       <span className="unit">€</span>
     </>
-  ) : (
-    <>{text}</>
   );
 }
 
-export function Home({ rev }: { rev: number }) {
+export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
+  const ov = useLoad("overview" + rev, (s) => get<Overview>("overview", s));
   const pf = useLoad("portfolio" + rev, (s) => get<Portfolio>("portfolio", s));
-  const hist = useLoad("history" + rev, history);
-  const monthStart = useMemo(() => {
-    const n = new Date();
-    return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1));
-  }, []);
-  const acts = useLoad("month" + rev, (s) => activitiesSince(monthStart, s));
+  const st = useLoad("stats" + rev, (s) => get<Stats>("stats", s));
+  const lastYear = new Date().getFullYear() - 1;
+  const tax = useLoad(ov.data ? "tax" + rev : null, (s) => get<TaxFR>(`tax/fr?year=${lastYear}`, s));
 
-  const [period, setPeriod] = useState<Period>(() => remembered("period", "Tout", ["1M", "1A", "Tout"] as const));
-  const [view, setView] = useState<"assets" | "sources">(() => remembered("view", "assets", ["assets", "sources"] as const));
-  // The value line draws itself once, on the first chart.
-  const drawn = useRef(false);
+  const [period, setPeriod] = useState<PeriodKey>(() => remembered("period", "1A", ["7J", "1M", "YTD", "1A", "Tout"] as const));
+  const [view, setView] = useState<View>(() => remembered("view", "value", ["value", "perf"] as const));
+  const [by, setBy] = useState<"assets" | "sources">(() => remembered("by", "assets", ["assets", "sources"] as const));
+  const [scrub, setScrub] = useState<number | null>(null);
 
-  const all = useMemo<Pt[]>(
-    () => (hist.data?.points ?? []).map((p) => ({ t: utc(p.date), v: num(p.value), i: num(p.invested) })),
-    [hist.data],
-  );
-  const points = useMemo(() => slice(all, period), [all, period]);
+  const o = ov.data;
+  const per = o?.periods.find((p) => p.key === period);
 
-  const month = useMemo(() => {
-    if (!all.length) return null;
-    const before = all.filter((p) => p.t < monthStart.getTime());
-    const base = before.length ? before[before.length - 1].i : 0;
-    const rewards = (acts.data ?? [])
-      .filter((a) => (a.type === "reward" || a.type === "interest") && a.base?.asset.kind === "crypto")
-      .reduce((s, a) => s + num(a.cost), 0);
-    return { invested: all[all.length - 1].i - base, rewards };
-  }, [all, acts.data, monthStart]);
+  // The period's points, its opening first (nothing before "Tout").
+  const series = useMemo(() => {
+    if (!o || !per) return null;
+    const all = o.points;
+    const raw = per.key === "Tout" ? all : all.slice(per.from);
+    // Long spans keep about 400 points: a clean line, exact values.
+    const every = Math.ceil(raw.length / 400);
+    const pts = every > 1 ? raw.filter((_, n) => n % every === 0 || n === raw.length - 1) : raw;
+    const open = per.key === "Tout" ? { d: "", v: 0, i: 0, x: 1 } : all[per.from];
+    return {
+      pts,
+      open,
+      t: pts.map((p) => utc(p.d)),
+      value: pts.map((p) => p.v),
+      invested: pts.map((p) => p.i),
+      perf: pts.map((p) => (p.x / (open.x || 1) - 1) * 100),
+    };
+  }, [o, per]);
 
-  const error = pf.error ?? hist.error;
-  if (error && (!pf.data || !hist.data))
-    return (
-      <Failed
-        error={error}
-        retry={() => {
-          pf.reload();
-          hist.reload();
-        }}
-      />
-    );
-  if (!pf.data || !hist.data) return <Loading />;
+  if (ov.error && !o) return <Failed error={ov.error} retry={ov.reload} />;
+  if (!o || !per || !series) return <HomeSkeleton />;
 
-  const p = pf.data;
-  const value = num(p.total.value);
-  const invested = num(p.total.invested);
-  const gain = value - invested;
+  const { pts, open } = series;
+  const at = scrub !== null && scrub < pts.length ? pts[scrub] : null;
+  const gain = at ? at.v - at.i - (open.v - open.i) : per.gain;
+  const ret = at ? at.x / (open.x || 1) - 1 : per.twr;
 
-  const first = points[0];
-  const last = points[points.length - 1];
-  const periodGain = first && last ? last.v - last.i - (first.v - first.i) : 0;
-
-  const parts: Part[] =
-    view === "assets"
-      ? p.assets.map((a) => ({ key: a.asset.symbol, label: a.asset.symbol, value: num(a.value) }))
-      : p.sources.map((s) => ({ key: s.id, label: s.name, value: num(s.value) }));
-
-  const animate = !drawn.current;
-  drawn.current = true;
+  const changePeriod = (v: PeriodKey) => {
+    setPeriod(v);
+    setScrub(null);
+    remember("period", v);
+  };
 
   return (
     <div className="home">
-      <section className="hero" aria-labelledby="h-home">
-        <h1 id="h-home" className="sr">
-          Où j'en suis
+      <section className="hero" aria-labelledby="h-value">
+        <h1 id="h-value" className="hero-when">
+          {at ? day(utc(at.d)) : "Portefeuille"}
         </h1>
-        <p className="total num" aria-label={`Valeur : ${eur(value)}`}>
-          <Big text={eur(value)} />
+        <p className="hero-value num">
+          <BigEuros value={at ? at.v : o.total.value} instant={!!at} />
         </p>
-        <p className="gain num">
-          <span className={tone(gain)}>{eur(gain, { sign: true })}</span>
-          {invested > 0 && <span className={tone(gain)}>{pct(gain / invested, { sign: true })}</span>}
-          <span className="muted">sur {eur(invested)} investis</span>
+        <p className={`hero-change num ${tone(gain)}`}>
+          <Arrow n={gain} />
+          <Num value={gain} instant={!!at} format={(v) => eur(v, { sign: true, cents: true })} />
+          <span>
+            (<Num value={ret} instant={!!at} format={(v) => pct(v, { sign: true })} />)
+          </span>
+          <span className="since">{at && open.d ? "depuis le " + day(utc(open.d)) : SINCE[period]}</span>
         </p>
-        <dl className="parts num">
-          <div>
-            <dt>Latente</dt>
-            <dd>{eur(p.total.unrealized, { sign: true })}</dd>
-          </div>
-          <div>
-            <dt>Réalisée</dt>
-            <dd>{eur(p.total.realized, { sign: true })}</dd>
-          </div>
-          <div>
-            <dt>Récompenses</dt>
-            <dd>{eur(p.total.rewards)}</dd>
-          </div>
-        </dl>
       </section>
 
-      <section className="progress" aria-label="Progression">
-        <div className="progress-head">
-          <div className="legend" aria-hidden>
-            <span className="lg-v">Valeur</span>
-            <span className="lg-i">Investi</span>
-          </div>
-          <span className={`period-gain num ${tone(periodGain)}`} title="Gain sur la période">
-            {period !== "Tout" && points.length > 1 && eur(periodGain, { sign: true })}
-          </span>
+      <section className="graph" aria-label="Évolution">
+        <LineChart
+          t={series.t}
+          y={view === "value" ? series.value : series.perf}
+          y2={view === "value" ? series.invested : undefined}
+          level={view === "perf" ? 0 : undefined}
+          fromZero={view === "value"}
+          tone={per.gain >= 0 ? "up" : "down"}
+          axis={view === "value" ? (v) => (v === 0 ? "0" : eurShort(v)) : (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(Math.round(v))} %`}
+          height={320}
+          dataKey={period + view}
+          label={`${view === "value" ? "Valeur et apports" : "Performance"} ${SINCE[period]}. Flèches pour parcourir.`}
+          scrub={scrub}
+          onScrub={setScrub}
+          tip={(i) => {
+            const p = pts[i];
+            const g = p.v - p.i;
+            return (
+              <dl>
+                <div>
+                  <dt>Valeur</dt>
+                  <dd>{eur(p.v)}</dd>
+                </div>
+                <div>
+                  <dt>
+                    <i className="dash" aria-hidden />
+                    Investi
+                  </dt>
+                  <dd>{eur(p.i)}</dd>
+                </div>
+                <div>
+                  <dt>Gain total</dt>
+                  <dd className={tone(g)}>{eur(g, { sign: true })}</dd>
+                </div>
+              </dl>
+            );
+          }}
+        />
+        <div className="graph-bar">
+          <Segmented label="Période" className="chips" options={PERIODS} value={period} onChange={changePeriod} />
           <Segmented
-            label="Période"
-            options={PERIODS}
-            value={period}
+            label="Courbe"
+            className="toggle"
+            options={[
+              { value: "value", label: "Valeur" },
+              { value: "perf", label: "Performance" },
+            ]}
+            value={view}
             onChange={(v) => {
-              setPeriod(v);
-              remember("period", v);
+              setView(v);
+              setScrub(null);
+              remember("view", v);
             }}
           />
         </div>
-        {points.length > 1 ? <Chart points={points} animate={animate} /> : <p className="empty">Pas encore d'historique.</p>}
       </section>
 
-      <div className="split">
-        <section className="where" aria-labelledby="h-alloc">
-          <div className="head">
-            <h2 id="h-alloc">Répartition</h2>
-            <Segmented
-              label="Répartition par"
-              options={[
-                { value: "assets", label: "Actifs" },
-                { value: "sources", label: "Comptes" },
-              ]}
-              value={view}
-              onChange={(v) => {
-                setView(v);
-                remember("view", v);
+      <dl className="figures num" aria-label="Chiffres clés">
+        <div>
+          <dt>Gain total</dt>
+          <dd className={tone(o.total.gain)}>{eur(o.total.gain, { sign: true })}</dd>
+          <dd className="figure-sub">{o.total.invested > 0 && pct(o.total.gain / o.total.invested, { sign: true }) + " des apports"}</dd>
+        </div>
+        <div>
+          <dt>Rendement annuel</dt>
+          <dd className={o.total.xirr === null ? "" : tone(o.total.xirr)}>{o.total.xirr === null ? "–" : pct(o.total.xirr, { sign: true })}</dd>
+          <dd className="figure-sub">selon tes apports</dd>
+        </div>
+        <div>
+          <dt>Apports nets</dt>
+          <dd>{eur(o.total.invested)}</dd>
+          <dd className="figure-sub">versés moins retirés</dd>
+        </div>
+        <div>
+          <dt>Récompenses</dt>
+          <dd>{eur(o.total.rewards)}</dd>
+          <dd className="figure-sub">staking compris</dd>
+        </div>
+        <div>
+          <dt>Frais payés</dt>
+          <dd>{eur(o.total.fees)}</dd>
+          <dd className="figure-sub">{o.total.invested > 0 && pct(o.total.fees / o.total.invested) + " des apports"}</dd>
+        </div>
+      </dl>
+
+      <div className="duo">
+        <section aria-labelledby="h-coins">
+          <div className="sec-head">
+            <h2 id="h-coins">Actifs</h2>
+            <a
+              href="/actifs"
+              className="more-link"
+              onClick={(e) => {
+                e.preventDefault();
+                go("/actifs");
               }}
-            />
+            >
+              Tout voir
+            </a>
           </div>
-          <Allocation parts={parts} />
+          {st.data ? (
+            <CoinList coins={st.data.assets.filter((c) => c.held).slice(0, 6)} go={go} />
+          ) : st.error ? (
+            <Failed error={st.error} retry={st.reload} />
+          ) : (
+            <SkelRows rows={4} />
+          )}
         </section>
 
-        <section className="month" aria-labelledby="h-month">
-          <div className="head">
-            <h2 id="h-month">Ce mois-ci</h2>
-          </div>
-          <dl className="num">
-            <div>
-              <dt>Apports</dt>
-              <dd>{month ? eur(month.invested, { sign: true }) : "–"}</dd>
+        <aside className="side">
+          <section aria-labelledby="h-alloc">
+            <div className="sec-head">
+              <h2 id="h-alloc">Répartition</h2>
+              <Segmented
+                label="Répartition par"
+                className="toggle small"
+                options={[
+                  { value: "assets", label: "Actifs" },
+                  { value: "sources", label: "Comptes" },
+                ]}
+                value={by}
+                onChange={(v) => {
+                  setBy(v);
+                  remember("by", v);
+                }}
+              />
             </div>
-            <div>
-              <dt>Récompenses</dt>
-              <dd>{acts.error ? <span title={acts.error}>–</span> : month && acts.data ? eur(month.rewards) : "…"}</dd>
-            </div>
-          </dl>
-        </section>
+            {pf.data ? (
+              <>
+                <Allocation
+                  parts={
+                    by === "assets"
+                      ? pf.data.assets.map((a) => ({ key: a.asset.symbol, label: a.asset.symbol, value: Number(a.value) }))
+                      : pf.data.sources.map((s) => ({ key: s.id, label: s.name, value: Number(s.value) }))
+                  }
+                />
+                {o.total.value > 0 && o.total.stable > 0 && (
+                  <p className="stable num">
+                    <span className="muted">Stablecoins</span>
+                    <span>{pct(o.total.stable / o.total.value)}</span>
+                  </p>
+                )}
+              </>
+            ) : (
+              <Skel h={120} r={12} w="100%" />
+            )}
+          </section>
+
+          {tax.data && tax.data.disposals.length > 0 && (
+            <a
+              href="/impots"
+              className="tax-card"
+              onClick={(e) => {
+                e.preventDefault();
+                go("/impots");
+              }}
+            >
+              <span className="tax-card-text">
+                <span className="tax-card-title">Déclaration {tax.data.year}</span>
+                <span className="muted">Formulaire 2086</span>
+              </span>
+              <span className="tax-card-amount num">{tax.data.total.exempt ? "Exonéré" : eur(tax.data.total.tax)}</span>
+              <svg viewBox="0 0 16 16" aria-hidden className="chev">
+                <path d="m6 3 5 5-5 5" />
+              </svg>
+            </a>
+          )}
+        </aside>
       </div>
 
-      <section className="assets" aria-labelledby="h-assets">
-        <div className="head">
-          <h2 id="h-assets">Actifs</h2>
-        </div>
-        <table className="table num">
-          <thead>
-            <tr>
-              <th scope="col">Actif</th>
-              <th scope="col" className="wide">
-                Quantité
-              </th>
-              <th scope="col">Valeur</th>
-              <th scope="col" className="wide">
-                Coût
-              </th>
-              <th scope="col">Plus-value</th>
-              <th scope="col" className="mid">
-                Part
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {p.assets.map((a) => {
-              const u = num(a.unrealized);
-              const c = num(a.cost);
-              return (
-                <tr key={a.asset.symbol}>
-                  <th scope="row">
-                    <span className="asset">
-                      <Coin symbol={a.asset.symbol} />
-                      <span>
-                        <span className="sym">{a.asset.symbol}</span>
-                        <span className="sub">{qty(a.qty)}</span>
-                      </span>
-                    </span>
-                  </th>
-                  <td className="wide">{qty(a.qty)}</td>
-                  <td>
-                    {eur(a.value)}
-                    <span className="sub mid-hide">{pct(num(a.share))}</span>
-                  </td>
-                  <td className="wide muted">{eur(a.cost)}</td>
-                  <td className={tone(u)}>
-                    {eur(u, { sign: true })}
-                    {c > 0 && <span className="sub">{pct(u / c, { sign: true })}</span>}
-                  </td>
-                  <td className="mid">
-                    <span className="share-cell">
-                      <span className="share-bar" style={{ width: `${Math.max(2, num(a.share) * 100)}%` }} />
-                      {pct(num(a.share))}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </section>
+      {st.data && <StatsSection stats={st.data} go={go} />}
 
       <footer className="foot">
         <span>
-          État au {date(p.at)}, {time(p.at)}
+          État au {date(o.at)}, {time(o.at)}
         </span>
-        {p.unpriced.length > 0 && <span>Sans prix : {p.unpriced.map((a) => a.symbol).join(", ")}</span>}
+        {o.unpriced.length > 0 && <span>Sans cours : {o.unpriced.map((a) => a.symbol).join(", ")}</span>}
       </footer>
+    </div>
+  );
+}
+
+/** Coins as rows: icon, name and quantity, a month of price, value and gain. */
+export function CoinList({ coins, go }: { coins: CoinStat[]; go: (path: string) => void }) {
+  if (!coins.length) return <p className="empty">Aucun actif.</p>;
+  return (
+    <ul className="coin-list">
+      {coins.map((c) => {
+        const g = c.held ? c.unrealized : c.gain;
+        return (
+          <li key={c.asset.symbol}>
+            <a
+              href={"/actifs/" + c.asset.symbol}
+              onClick={(e) => {
+                if (e.metaKey || e.ctrlKey) return;
+                e.preventDefault();
+                go("/actifs/" + c.asset.symbol);
+              }}
+            >
+              <Coin symbol={c.asset.symbol} size={40} />
+              <span className="coin-main">
+                <span className="coin-name">{c.asset.symbol}</span>
+                <span className="coin-sub num">{c.held ? `${qty(c.qty)} · ${pct(c.share)}` : "Plus détenu"}</span>
+              </span>
+              <span className="coin-spark">{c.spark && <Spark values={c.spark} />}</span>
+              <span className="coin-num num">
+                <span className="coin-value">{c.held ? eur(c.value) : eur(c.gain, { sign: true })}</span>
+                {c.stable ? (
+                  <span className="coin-gain muted">Stablecoin</span>
+                ) : c.held ? (
+                  <span className={`coin-gain ${tone(g)}`}>
+                    {eur(g, { sign: true })}
+                    {c.cost > 0 && ` · ${pct(g / c.cost, { sign: true })}`}
+                  </span>
+                ) : (
+                  <span className="coin-gain muted">gain total</span>
+                )}
+              </span>
+            </a>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function StatsSection({ stats, go }: { stats: Stats; go: (path: string) => void }) {
+  const months = stats.months;
+  if (months.length < 2) return null;
+  return (
+    <section className="stats" aria-labelledby="h-stats">
+      <h2 id="h-stats">Statistiques</h2>
+      <div className="stat wide">
+        <h3>Rendements mensuels</h3>
+        <Heatmap months={months} />
+      </div>
+      <div className="stat">
+        <h3>Apports par mois</h3>
+        <MonthBars months={months} />
+      </div>
+      <div className="stat">
+        <h3>D'où vient la valeur</h3>
+        <SplitArea points={months} />
+      </div>
+      <div className="stat">
+        <h3>Récompenses cumulées</h3>
+        <Rewards months={months} />
+      </div>
+      <div className="stat">
+        <h3>Gain par actif</h3>
+        <Ranking coins={stats.assets} onOpen={(s) => go("/actifs/" + s)} />
+      </div>
+    </section>
+  );
+}
+
+function Rewards({ months }: { months: Stats["months"] }) {
+  const [at, setAt] = useState<number | null>(null);
+  const shown = useMemo(() => {
+    const first = months.findIndex((m) => m.earned > 0);
+    return first < 0 ? [] : months.slice(Math.max(0, first - 1));
+  }, [months]);
+  const t = useMemo(() => shown.map((x) => utc(x.m)), [shown]);
+  const y = useMemo(() => shown.map((x) => x.earned), [shown]);
+  if (shown.length < 2) return <p className="empty">Aucune récompense pour l'instant.</p>;
+  const m = at !== null ? shown[at] : shown[shown.length - 1];
+  const last12 = months.slice(-12).reduce((s, x) => s + x.rewards, 0);
+  return (
+    <div>
+      <LineChart
+        t={t}
+        y={y}
+        tone="ink"
+        fromZero
+        axis={eurShort}
+        height={168}
+        dataKey="rewards"
+        label="Récompenses cumulées, mois par mois"
+        scrub={at}
+        onScrub={setAt}
+      />
+      <p className="chart-note num" aria-live="polite">
+        {at !== null ? (
+          <>
+            {monthLong(utc(m.m))} <b>{eur(m.earned)}</b>
+            <span className="muted"> · {eur(m.rewards, { sign: true })} ce mois-là</span>
+          </>
+        ) : (
+          <>
+            <b>{eur(m.earned)}</b> reçues <span className="muted">· {eur(last12)} sur 12 mois</span>
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
+function HomeSkeleton() {
+  return (
+    <div className="home" aria-busy="true" aria-label="Chargement">
+      <section className="hero">
+        <Skel w={96} h={14} />
+        <Skel w="min(380px, 80%)" h={56} r={12} className="skel-hero" />
+        <Skel w={220} h={18} />
+      </section>
+      <div className="graph">
+        <Skel w="100%" h={320} r={16} />
+        <Slow />
+      </div>
+      <div className="figures">
+        {Array.from({ length: 5 }, (_, n) => (
+          <div key={n}>
+            <Skel w={90} h={12} />
+            <Skel w={110} h={22} />
+          </div>
+        ))}
+      </div>
+      <SkelRows rows={4} />
     </div>
   );
 }

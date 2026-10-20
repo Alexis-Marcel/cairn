@@ -90,7 +90,7 @@ export function Taxes({ rev }: { rev: number }) {
       <div className="tax-head">
         <h1>Impôts</h1>
         {years.length > 1 && (
-          <Segmented label="Année" options={years.map((y) => ({ value: y, label: String(y) }))} value={year} onChange={setPicked} />
+          <Segmented label="Année" className="chips" options={years.map((y) => ({ value: y, label: String(y) }))} value={year} onChange={setPicked} />
         )}
       </div>
 
