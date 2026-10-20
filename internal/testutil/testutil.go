@@ -23,7 +23,7 @@ func Store(t testing.TB) *store.Store {
 
 // Prices answers every day with the same close per market: BTC at 40 000 €
 // until the end of 2024 and 60 000 € after, ETH at 2 000 €, stablecoins and
-// dollars at 1 €. Other markets have no closes.
+// dollars at 1 €, the ETF IE00B4L5Y983 at 100 € then 120 €. Other markets have no closes.
 func Prices(st price.Cache, now time.Time) *price.Service {
 	p := price.New(st, nil)
 	p.Now = func() time.Time { return now }
@@ -41,6 +41,11 @@ func Prices(st price.Cache, now time.Time) *price.Service {
 				v = 2000
 			case "fx:USDEUR":
 				v = 1
+			case "justetf:IE00B4L5Y983:EUR":
+				v = 100
+				if d.Year() >= 2025 {
+					v = 120
+				}
 			default:
 				continue
 			}

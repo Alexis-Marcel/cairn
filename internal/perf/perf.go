@@ -13,10 +13,12 @@ import (
 )
 
 // Day is the portfolio at the close of a day: its value and what was
-// invested until then (external flows: euros in, minus euros out).
+// invested until then (external flows: euros in, minus euros out, income
+// paid out in cash among them). PaidOut is that income so far (dividends):
+// money out, but not money taken back by the investor.
 type Day struct {
-	T               time.Time
-	Value, Invested float64
+	T                        time.Time
+	Value, Invested, PaidOut float64
 }
 
 // minBase: below this, a day's starting value is too small to measure a
@@ -148,7 +150,8 @@ type Month struct {
 	Month string // 2024-03
 	// Return: time-weighted, over the month.
 	Return float64
-	// In and Out: money put in and taken out during the month (Out ≥ 0).
+	// In and Out: money put in and taken out during the month (Out ≥ 0),
+	// income paid out apart.
 	In, Out float64
 	// Value and Invested at the month's last day.
 	Value, Invested float64
@@ -166,13 +169,14 @@ func Monthly(days []Day) []Month {
 		}
 		m := &out[len(out)-1]
 		m.Return *= f[n]
-		if flow := d.Invested - prevI; flow > 0 {
+		// Contributions only: income paid out is not money taken back.
+		if flow := d.Invested + d.PaidOut - prevI; flow > 0 {
 			m.In += flow
 		} else {
 			m.Out -= flow
 		}
 		m.Value, m.Invested = d.Value, d.Invested
-		prevI = d.Invested
+		prevI = d.Invested + d.PaidOut
 	}
 	for i := range out {
 		out[i].Return--
