@@ -3,7 +3,7 @@ module github.com/Alexis-Marcel/cairn
 go 1.26.0
 
 require (
-	github.com/Alexis-Marcel/fundarr v0.0.0-20261020124657-3373ef3c5540
+	github.com/Alexis-Marcel/fundarr v0.1.0
 	github.com/shopspring/decimal v1.4.0
 	modernc.org/sqlite v1.60.1
 )
