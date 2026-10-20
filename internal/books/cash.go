@@ -16,7 +16,9 @@ package books
 // Cash comes from the history (trades' cash legs, deposits, withdrawals,
 // fees, interest, dividends, corrections). An account whose cash would go
 // below nothing (a purchase entered by hand, with no deposit before it) was
-// paid from outside: the shortfall is money put in.
+// paid from outside: the shortfall is money put in. A deposit from outside
+// that comes after it (a savings plan's transfer booked after its purchase)
+// pays that shortfall back first, so the same money is not put in twice.
 //
 // In a scope, each account's cash belongs to the scope of its account (the
 // class it trades most); money moving from one scope to the other (euros
@@ -152,11 +154,16 @@ func (l *Ledger) money(price portfolio.Price) *Money {
 		}
 	}
 	bal := map[cashKey]decimal.Decimal{}
+	adv := map[cashKey]decimal.Decimal{} // shortfalls paid from outside, not yet covered by a deposit
 	curs := map[string]model.Asset{}
 	var touched []cashKey
 	order := model.ReplayOrder(l.Acts, l.Pairs)
 	for i, a := range order {
 		value := func(x model.Amount) decimal.Decimal { return eurOf(price, x, a.Time) }
+		// A deposit from outside first covers what was already counted as
+		// put in for this account's shortfall.
+		deposit := a.Type == model.Deposit && a.Base.Asset.Kind == model.Fiat && l.External(a)
+		repaid := decimal.Zero
 		for _, g := range legs(a) {
 			if g.amt.Asset.Kind != model.Fiat || g.amt.Qty.IsZero() {
 				continue
@@ -164,6 +171,14 @@ func (l *Ledger) money(price portfolio.Price) *Money {
 			k := cashKey{a.SourceID, g.amt.Asset.Key()}
 			curs[k.cur] = g.amt.Asset
 			q := g.amt.Qty.Mul(decimal.NewFromInt(g.sign))
+			if deposit && g.sign > 0 && repaid.IsZero() && adv[k].IsPositive() && g.amt.Asset.Key() == a.Base.Asset.Key() {
+				repaid = decimal.Min(q, adv[k])
+				adv[k] = adv[k].Sub(repaid)
+				q = q.Sub(repaid)
+				if q.IsZero() {
+					continue
+				}
+			}
 			bal[k] = bal[k].Add(q)
 			touched = append(touched, k)
 			emit(l.legScope(a.SourceID, g.amt.Asset), event{T: a.Time, Acc: a.SourceID, Cur: g.amt.Asset, Qty: q})
@@ -187,7 +202,9 @@ func (l *Ledger) money(price portfolio.Price) *Money {
 			case a.Base.Asset.Kind == model.Fiat:
 				kind = flowBank
 			}
-			flow(base, value(a.Base).Mul(sign), kind)
+			amt := a.Base
+			amt.Qty = amt.Qty.Sub(repaid)
+			flow(base, value(amt).Mul(sign), kind)
 		case a.Type == model.Fee && card(a):
 			// Card spending, as a payment: money out, not a loss.
 			flow(base, value(a.Base).Neg(), flowBank)
@@ -238,6 +255,7 @@ func (l *Ledger) money(price portfolio.Price) *Money {
 				sc := l.legScope(k.acc, cur)
 				emit(sc, event{T: a.Time, Acc: k.acc, Cur: cur, Qty: b.Neg()})
 				emit(sc, event{T: a.Time, Acc: k.acc, Flow: eurOf(price, model.Amount{Asset: cur, Qty: b.Neg()}, a.Time), Kind: flowBank})
+				adv[k] = adv[k].Add(b.Neg())
 				bal[k] = decimal.Zero
 			}
 		}

@@ -3,6 +3,7 @@ package books
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -283,4 +284,28 @@ func TestPaidFromOutside(t *testing.T) {
 	near(t, "cash", tot.Cash, 0)
 	near(t, "value", tot.Value, 0.0275*60000)
 	near(t, "gain", tot.Gain, 0.0275*60000-1100)
+}
+
+// A savings plan books each purchase a moment before the transfer that
+// pays for it (seen on a Trade Republic PEA): the transfer covers the
+// purchase, the money is put in once and no cash is left.
+func TestSavingsPlanBookedBeforeItsTransfer(t *testing.T) {
+	e, ids := book(t, "pea")
+	x := ids["pea"]
+	for i, day := range []string{"2024-01-01", "2024-01-08", "2024-01-15"} {
+		b := trade(fmt.Sprintf("buy%d", i), x, day, model.Buy, model.Amt(btc, "0.001"), model.Amt(eur, "40"))
+		in := act(fmt.Sprintf("in%d", i), x, day, model.Deposit, model.Amt(eur, "40"))
+		in.Time = b.Time.Add(time.Second)
+		add(t, e, b, in)
+	}
+	tot := overviewOf(t, e, "").Total
+	near(t, "paid in", tot.PaidIn, 120)
+	near(t, "cash", tot.Cash, 0)
+	near(t, "invested", tot.Invested, 120)
+	// A transfer larger than the purchase keeps the rest as cash.
+	more := act("in-more", x, "2024-02-01", model.Deposit, model.Amt(eur, "25"))
+	add(t, e, more)
+	tot = overviewOf(t, e, "").Total
+	near(t, "paid in, then", tot.PaidIn, 145)
+	near(t, "cash, then", tot.Cash, 25)
 }
