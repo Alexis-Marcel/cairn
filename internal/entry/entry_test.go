@@ -63,3 +63,37 @@ func TestKind(t *testing.T) {
 		t.Error("a paired deposit is a transfer")
 	}
 }
+
+func TestSecurities(t *testing.T) {
+	acts, err := Entry{Kind: Buy, Asset: "ie00b4l5y983", Name: " iShares  Core MSCI World ", Qty: "3", Total: "300"}.Build(at, "a", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := acts[0].Base.Asset
+	if b.Kind != model.Security || b.ISIN != "IE00B4L5Y983" || b.Name != "iShares Core MSCI World" {
+		t.Fatalf("%+v", b)
+	}
+	div, err := Entry{Kind: Dividend, Asset: "FR0000120271", Qty: "4,80"}.Build(at, "a", "")
+	if err != nil || div[0].Type != model.Dividend || div[0].Base.Asset.Symbol != "EUR" || div[0].Quote.Asset.ISIN != "FR0000120271" ||
+		Kind(div[0], false) != Dividend {
+		t.Fatalf("dividend: %+v %v", div, err)
+	}
+	in, err := Entry{Kind: Interest, Qty: "2"}.Build(at, "a", "")
+	if err != nil || in[0].Type != model.Interest || Kind(in[0], false) != Interest {
+		t.Fatalf("interest: %+v %v", in, err)
+	}
+	for name, e := range map[string]Entry{
+		"check digit":        {Kind: Buy, Asset: "IE00B4L5Y984", Qty: "1", Total: "1"},
+		"dividend of a coin": {Kind: Dividend, Asset: "BTC", Qty: "1"},
+		"swap a stock":       {Kind: Swap, Asset: "FR0000120271", Qty: "1", Received: "BTC", ReceivedQty: "1"},
+	} {
+		if _, err := e.Build(at, "a", ""); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	for _, ok := range []string{"US0378331005", "FR0000120271", "LU1681043599", "IE00B4L5Y983", "DE000A0D9PT0"} {
+		if !ValidISIN(ok) {
+			t.Errorf("%s refused", ok)
+		}
+	}
+}

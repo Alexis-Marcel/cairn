@@ -12,7 +12,7 @@ func TestTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.Format != Cairn || !f.Accounts || len(f.Rows) != 7 {
+	if f.Format != Cairn || !f.Accounts || len(f.Rows) != 9 {
 		t.Fatalf("%+v", f)
 	}
 	for _, r := range f.Rows {
@@ -31,6 +31,41 @@ func TestTemplate(t *testing.T) {
 	}
 	if f.Rows[1].Activity.Base.Asset.Kind != model.Fiat {
 		t.Fatal("a deposit of euros is cash")
+	}
+	etf := f.Rows[4].Activity
+	if etf.Base.Asset.Kind != model.Security || etf.Base.Asset.ISIN != "IE00B4L5Y983" || etf.Base.Asset.Name != "iShares Core MSCI World" ||
+		etf.Quote.Qty.String() != "300" {
+		t.Fatalf("ETF: %+v", etf.Base)
+	}
+	div := f.Rows[8].Activity
+	if div.Type != model.Dividend || div.Base.Asset.Symbol != "EUR" || div.Base.Qty.String() != "4.2" || div.Quote.Asset.ISIN != "IE00B4L5Y983" {
+		t.Fatalf("dividend: %+v", div)
+	}
+}
+
+// A security by its ISIN, in isin or in actif; a wrong check digit is
+// refused, and a stock cannot be swapped like a coin.
+func TestISIN(t *testing.T) {
+	csv := "date,type,actif,isin,nom,quantite,prix,compte\n" +
+		"2025-01-03,achat,,FR0000120271,TotalEnergies,10,600,TR\n" +
+		"2025-01-04,achat,US0378331005,,Apple,2,360,TR\n" +
+		"2025-01-05,achat,,FR0000120272,,1,60,TR\n" +
+		"2025-03-01,dividende,,FR0000120271,,,4.8,TR\n"
+	f, err := Read(strings.NewReader(csv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Rows[0].Error != "" || f.Rows[0].Activity.Base.Asset.ISIN != "FR0000120271" || f.Rows[0].Activity.Base.Asset.Name != "TotalEnergies" {
+		t.Fatalf("by isin: %+v", f.Rows[0])
+	}
+	if f.Rows[1].Error != "" || f.Rows[1].Activity.Base.Asset.Kind != model.Security {
+		t.Fatalf("an ISIN in actif: %+v", f.Rows[1])
+	}
+	if !strings.Contains(f.Rows[2].Error, "ISIN invalide") {
+		t.Fatalf("bad check digit: %+v", f.Rows[2])
+	}
+	if d := f.Rows[3].Activity; f.Rows[3].Error != "" || d.Type != model.Dividend || d.Base.Qty.String() != "4.8" {
+		t.Fatalf("dividend: %+v", f.Rows[3])
 	}
 }
 
