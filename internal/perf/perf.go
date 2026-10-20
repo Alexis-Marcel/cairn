@@ -179,3 +179,17 @@ func Monthly(days []Day) []Month {
 	}
 	return out
 }
+
+// Simple is a period's gain over what was at stake in it: the value at its
+// opening plus the money put in during it, net of what was taken out (for
+// a whole history, the net contributions). Money taken out does not shrink
+// the stake below the opening value: selling after a rise would otherwise
+// inflate the figure. ok is false when nothing was at stake.
+func Simple(openValue, openInvested, endValue, endInvested float64) (pct float64, ok bool) {
+	base := openValue + max(0, endInvested-openInvested)
+	if base <= minBase {
+		return 0, false
+	}
+	gain := endValue - endInvested - (openValue - openInvested)
+	return gain / base, true
+}
