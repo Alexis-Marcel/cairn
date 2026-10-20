@@ -61,8 +61,15 @@ func (e *Engine) series(l *Ledger, p *pricer) *series {
 			days = portfolio.Days(start, today, "week")
 		}
 		points, _ := portfolio.History(l.Acts, l.Pairs, p.memoize, days)
+		// Dividends leave for cash, as a sale's euros do: the money still
+		// invested is what went in less what came back.
+		divs := paidOut(l.Acts, p.memoize)
+		paid, n := decimal.Zero, 0
 		for _, pt := range points {
-			s.days = append(s.days, perf.Day{T: pt.Day, Value: f64(pt.Value), Invested: f64(pt.Invested)})
+			for ; n < len(divs) && divs[n].T.Before(pt.Day.Add(dayLen)); n++ {
+				paid = paid.Add(divs[n].V)
+			}
+			s.days = append(s.days, perf.Day{T: pt.Day, Value: f64(pt.Value), Invested: f64(pt.Invested.Sub(paid)), PaidOut: f64(paid)})
 		}
 	}
 	if !p.late.Load() {
@@ -157,18 +164,24 @@ func (e *Engine) Overview(ctx context.Context) ([]byte, error) {
 		for n, d := range s.days {
 			pts[n] = point{d.T.Format(time.DateOnly), r2(d.Value), r2(d.Invested), r6(x[n])}
 		}
-		// The last point is now's value, as the portfolio sees it.
-		value, invested := f64(sum.Value), f64(sum.Invested)
+		// The last point is now's value, as the portfolio sees it; dividends
+		// came back out of it.
+		value, invested := f64(sum.Value), f64(sum.Invested.Sub(r.Dividends))
 		var xirr *float64
 		if rate, ok := perf.XIRR(perf.Flows(s.days, 0)); ok && len(s.days) > 0 {
 			rate = r6(rate)
 			xirr = &rate
 		}
 		stable := decimal.Zero
+		classes := map[string]float64{}
 		for _, h := range sum.Assets {
 			if model.CashLike(h.Asset) {
 				stable = stable.Add(h.Value)
 			}
+			classes[Class(h.Asset)] += f64(h.Value)
+		}
+		for k, v := range classes {
+			classes[k] = r2(v)
 		}
 		return map[string]any{
 			"currency": Currency,
@@ -179,9 +192,10 @@ func (e *Engine) Overview(ctx context.Context) ([]byte, error) {
 			"total": map[string]any{
 				"value": r2(value), "invested": r2(invested), "gain": r2(value - invested),
 				"realized": r2(f64(sum.Realized)), "unrealized": r2(f64(sum.Unrealized)),
-				"rewards": r2(f64(sum.Rewards)), "fees": r2(f64(r.Fees)), "stable": r2(f64(stable)),
-				"xirr": xirr,
+				"rewards": r2(f64(sum.Rewards)), "dividends": r2(f64(r.Dividends)), "interest": r2(f64(r.Interest)),
+				"fees": r2(f64(r.Fees)), "stable": r2(f64(stable)), "xirr": xirr,
 			},
+			"classes":  classes,
 			"unpriced": assets(sum.Unpriced),
 		}, nil
 	})
@@ -199,19 +213,25 @@ type coinView struct {
 	Unrealized float64     `json:"unrealized"`
 	Realized   float64     `json:"realized"`
 	Rewards    float64     `json:"rewards"`
+	Dividends  float64     `json:"dividends"`
 	Fees       float64     `json:"fees"`
-	// Gain: unrealized, realized and rewards; Pct: of what was bought.
-	Gain   float64   `json:"gain"`
-	Pct    *float64  `json:"pct,omitempty"`
-	Held   bool      `json:"held"`
-	Stable bool      `json:"stable,omitempty"`
-	First  string    `json:"first"`
-	Spark  []float64 `json:"spark,omitempty"`
+	// Gain: unrealized, realized, rewards and dividends; Pct: of what was
+	// bought.
+	Gain   float64  `json:"gain"`
+	Pct    *float64 `json:"pct,omitempty"`
+	Held   bool     `json:"held"`
+	Stable bool     `json:"stable,omitempty"`
+	// ID: how links name it (ISIN or symbol); Class: crypto, stable, stock, etf.
+	ID    string    `json:"id"`
+	Class string    `json:"class"`
+	First string    `json:"first"`
+	Spark []float64 `json:"spark,omitempty"`
 }
 
 func coinOf(t *tally, h *portfolio.Holding) coinView {
-	v := coinView{Asset: t.Asset, Qty: "0", Realized: r2(f64(t.Realized)), Rewards: r2(f64(t.Rewards)), Fees: r2(f64(t.Fees)),
-		Stable: model.CashLike(t.Asset), First: t.First.UTC().Format(time.DateOnly)}
+	v := coinView{Asset: t.Asset, Qty: "0", Realized: r2(f64(t.Realized)), Rewards: r2(f64(t.Rewards)), Dividends: r2(f64(t.Dividends)),
+		Fees: r2(f64(t.Fees)), Stable: model.CashLike(t.Asset), First: t.First.UTC().Format(time.DateOnly),
+		ID: AssetID(t.Asset), Class: Class(t.Asset)}
 	if h != nil {
 		v.Qty, v.Price, v.Value, v.Cost = h.Qty.String(), f64(h.Price), r2(f64(h.Value)), r2(f64(h.Cost))
 		v.Unrealized, v.Share, v.Held = r2(f64(h.Unrealized)), r6(f64(h.Share)), true
@@ -219,7 +239,7 @@ func coinOf(t *tally, h *portfolio.Holding) coinView {
 			v.AvgCost = sig(f64(h.Cost.Div(h.Qty)))
 		}
 	}
-	v.Gain = r2(v.Unrealized + v.Realized + v.Rewards)
+	v.Gain = r2(v.Unrealized + v.Realized + v.Rewards + v.Dividends)
 	if b := f64(t.Bought); b > 0.5 && !v.Stable {
 		pct := r6(v.Gain / b)
 		v.Pct = &pct
@@ -227,7 +247,7 @@ func coinOf(t *tally, h *portfolio.Holding) coinView {
 	return v
 }
 
-// coins: every crypto ever held, held ones first by value.
+// coins: every crypto and security ever held, held ones first by value.
 func coins(r *replay, sum portfolio.Summary) []coinView {
 	held := map[string]*portfolio.Holding{}
 	for i := range sum.Assets {
@@ -265,25 +285,43 @@ func (e *Engine) Stats(ctx context.Context) ([]byte, error) {
 		r.run(l, at)
 
 		type month struct {
-			M        string  `json:"m"`
-			Return   float64 `json:"ret"`
-			In       float64 `json:"in"`
-			Out      float64 `json:"out"`
-			Rewards  float64 `json:"rewards"`
-			Value    float64 `json:"value"`
-			Invested float64 `json:"invested"`
-			// Earned: rewards so far, at their value when received.
+			M      string  `json:"m"`
+			Return float64 `json:"ret"`
+			In     float64 `json:"in"`
+			Out    float64 `json:"out"`
+			// The month's rewards (staking), dividends (net of tax) and
+			// interest on cash.
+			Rewards   float64 `json:"rewards"`
+			Dividends float64 `json:"dividends"`
+			Interest  float64 `json:"interest"`
+			Value     float64 `json:"value"`
+			Invested  float64 `json:"invested"`
+			// Earned: rewards and dividends so far, at their value when
+			// received (interest is on cash, outside the value).
 			Earned float64 `json:"earned"`
 		}
-		byMonth := map[string]float64{}
-		for d, v := range r.RewardDays {
-			byMonth[d[:7]] += f64(v)
+		type sums struct{ rewards, dividends, interest float64 }
+		byMonth := map[string]*sums{}
+		for d, v := range r.Income {
+			m := byMonth[d[:7]]
+			if m == nil {
+				m = &sums{}
+				byMonth[d[:7]] = m
+			}
+			m.rewards += f64(v.Rewards)
+			m.dividends += f64(v.Dividends)
+			m.interest += f64(v.Interest)
 		}
 		months := []month{}
 		earned := 0.0
 		for _, m := range perf.Monthly(s.days) {
-			earned += byMonth[m.Month]
-			months = append(months, month{m.Month, r6(m.Return), r2(m.In), r2(m.Out), r2(byMonth[m.Month]), r2(m.Value), r2(m.Invested), r2(earned)})
+			x := byMonth[m.Month]
+			if x == nil {
+				x = &sums{}
+			}
+			earned += x.rewards + x.dividends
+			months = append(months, month{m.Month, r6(m.Return), r2(m.In), r2(m.Out), r2(x.rewards), r2(x.dividends), r2(x.interest),
+				r2(m.Value), r2(m.Invested), r2(earned)})
 		}
 
 		list := coins(r, sum)
@@ -309,18 +347,11 @@ func (e *Engine) Asset(ctx context.Context, symbol string) ([]byte, error) {
 	return e.cached(ctx, "asset?"+symbol, func(l *Ledger, p *pricer) (any, error) {
 		at := e.Now()
 		today := at.Truncate(dayLen)
-		asset := model.Asset{Kind: model.Crypto, Symbol: symbol}
-		key := asset.Key()
-		known := false
-		for _, a := range l.Acts {
-			if a.Base.Asset.Key() == key || a.Quote != nil && a.Quote.Asset.Key() == key || a.Fee != nil && a.Fee.Asset.Key() == key {
-				known = true
-				break
-			}
-		}
+		asset, known := l.Find(symbol)
 		if !known {
 			return nil, &Error{404, "Aucune opération en " + symbol}
 		}
+		key := asset.Key()
 		sum := portfolio.Now(l.Acts, l.Pairs, p.memoize, at)
 		r := newReplay(l, p.memoize)
 		order := model.ReplayOrder(l.Acts, l.Pairs)

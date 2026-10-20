@@ -25,10 +25,10 @@ func near(t *testing.T, what string, got, want float64) {
 // whatever was added in between.
 func TestTWRDepositsAreNotGains(t *testing.T) {
 	days := []Day{
-		{d("2024-01-01"), 100, 100},
-		{d("2024-01-02"), 110, 100},
-		{d("2024-01-03"), 210, 200}, // +100 put in, no move
-		{d("2024-01-04"), 231, 200},
+		{d("2024-01-01"), 100, 100, 0},
+		{d("2024-01-02"), 110, 100, 0},
+		{d("2024-01-03"), 210, 200, 0}, // +100 put in, no move
+		{d("2024-01-04"), 231, 200, 0},
 	}
 	f := Factors(days)
 	near(t, "first day", f[0], 1)
@@ -42,9 +42,9 @@ func TestTWRDepositsAreNotGains(t *testing.T) {
 // Selling half takes money out: no loss.
 func TestTWRWithdrawal(t *testing.T) {
 	days := []Day{
-		{d("2024-01-01"), 200, 200},
-		{d("2024-01-02"), 100, 100},
-		{d("2024-01-03"), 50, 100},
+		{d("2024-01-01"), 200, 200, 0},
+		{d("2024-01-02"), 100, 100, 0},
+		{d("2024-01-03"), 50, 100, 0},
 	}
 	near(t, "twr", TWR(Factors(days), 0, 3), -0.5)
 }
@@ -52,9 +52,9 @@ func TestTWRWithdrawal(t *testing.T) {
 // Everything taken out, then nothing: flat, not −100 %.
 func TestTWREmpty(t *testing.T) {
 	days := []Day{
-		{d("2024-01-01"), 100, 100},
-		{d("2024-01-02"), 0, -20},
-		{d("2024-01-03"), 0, -20},
+		{d("2024-01-01"), 100, 100, 0},
+		{d("2024-01-02"), 0, -20, 0},
+		{d("2024-01-03"), 0, -20, 0},
 	}
 	f := Factors(days)
 	near(t, "after", f[2], 1)
@@ -105,10 +105,10 @@ func TestXIRRNone(t *testing.T) {
 
 func TestFlows(t *testing.T) {
 	days := []Day{
-		{d("2024-01-01"), 100, 100},
-		{d("2024-01-02"), 120, 100},
-		{d("2024-01-03"), 220, 200},
-		{d("2024-01-04"), 230, 200},
+		{d("2024-01-01"), 100, 100, 0},
+		{d("2024-01-02"), 120, 100, 0},
+		{d("2024-01-03"), 220, 200, 0},
+		{d("2024-01-04"), 230, 200, 0},
 	}
 	all := Flows(days, 0)
 	if len(all) != 3 || all[0].Amount != -100 || all[1].Amount != -100 || all[2].Amount != 230 {
@@ -123,11 +123,11 @@ func TestFlows(t *testing.T) {
 
 func TestMonthly(t *testing.T) {
 	days := []Day{
-		{d("2024-01-30"), 100, 100},
-		{d("2024-01-31"), 110, 100},
-		{d("2024-02-01"), 99, 100},
-		{d("2024-02-02"), 149, 150}, // +50 in
-		{d("2024-02-03"), 129, 130}, // 20 out
+		{d("2024-01-30"), 100, 100, 0},
+		{d("2024-01-31"), 110, 100, 0},
+		{d("2024-02-01"), 99, 100, 0},
+		{d("2024-02-02"), 149, 150, 0}, // +50 in
+		{d("2024-02-03"), 129, 130, 0}, // 20 out
 	}
 	m := Monthly(days)
 	if len(m) != 2 || m[0].Month != "2024-01" || m[1].Month != "2024-02" {

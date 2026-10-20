@@ -106,7 +106,13 @@ func Build(all []store.Activity, accs []store.Account) *Ledger {
 	for _, a := range accs {
 		l.Accounts[a.ID] = a
 	}
-	for _, a := range all {
+	acts := make([]model.Activity, len(all))
+	for i, a := range all {
+		acts[i] = a.Activity
+	}
+	named(acts)
+	for i, a := range all {
+		a.Activity = acts[i]
 		l.ByID[a.ID] = a
 		l.Acts = append(l.Acts, a.Activity)
 	}
@@ -138,6 +144,28 @@ func Build(all []store.Activity, accs []store.Account) *Ledger {
 	return l
 }
 
+// Find is the asset a page names by its ISIN or symbol (a security's ISIN
+// first), as the activities hold it; ok is false when none does.
+func (l *Ledger) Find(id string) (model.Asset, bool) {
+	id = strings.ToUpper(strings.TrimSpace(id))
+	var found model.Asset
+	ok := false
+	for _, a := range l.Acts {
+		for _, x := range []*model.Amount{&a.Base, a.Quote, a.Fee} {
+			if x == nil || x.Asset.Kind == model.Fiat {
+				continue
+			}
+			switch {
+			case x.Asset.Kind == model.Security && x.Asset.ISIN == id:
+				return x.Asset, true
+			case !ok && x.Asset.Symbol == id:
+				found, ok = x.Asset, true
+			}
+		}
+	}
+	return found, ok
+}
+
 // pricer is a portfolio.Price that remembers whether it ran out of time.
 type pricer struct {
 	ctx     context.Context
@@ -146,15 +174,17 @@ type pricer struct {
 	memoize portfolio.Price
 }
 
-func (e *Engine) pricer(ctx context.Context) *pricer {
+// pricer prices with the public markets; a security they do not know is
+// valued at its last trade in l (an estimate better than nothing).
+func (e *Engine) pricer(ctx context.Context, l *Ledger) *pricer {
 	p := &pricer{ctx: ctx, s: e.prices}
-	p.memoize = portfolio.Cached(func(a model.Asset, at time.Time) (decimal.Decimal, bool) {
+	p.memoize = portfolio.Cached(portfolio.WithTrades(l.Acts, func(a model.Asset, at time.Time) (decimal.Decimal, bool) {
 		v, err := p.s.Price(p.ctx, a, at, Currency)
 		if err != nil && p.ctx.Err() != nil {
 			p.late.Store(true)
 		}
 		return v, err == nil
-	})
+	}, Currency))
 	return p
 }
 
@@ -177,7 +207,7 @@ func (e *Engine) cached(ctx context.Context, key string, compute func(*Ledger, *
 	}
 	pctx, cancel := context.WithTimeout(ctx, e.Wait)
 	defer cancel()
-	p := e.pricer(pctx)
+	p := e.pricer(pctx, l)
 	v, err := compute(l, p)
 	if err != nil {
 		return nil, err
@@ -249,6 +279,8 @@ func (e *Engine) Portfolio(ctx context.Context) ([]byte, error) {
 			Unrealized string      `json:"unrealized"`
 			Share      string      `json:"share"`
 			Sources    []heldIn    `json:"sources"`
+			ID         string      `json:"id"`
+			Class      string      `json:"class"`
 		}
 		type worth struct {
 			Ref
@@ -257,7 +289,7 @@ func (e *Engine) Portfolio(ctx context.Context) ([]byte, error) {
 		out := []held{}
 		for _, h := range s.Assets {
 			v := held{h.Asset, h.Qty.String(), unitPrice(h.Price), money(h.Value), money(h.Cost), money(h.Unrealized),
-				h.Share.StringFixed(3), []heldIn{}}
+				h.Share.StringFixed(3), []heldIn{}, AssetID(h.Asset), Class(h.Asset)}
 			for _, q := range h.Sources {
 				v.Sources = append(v.Sources, heldIn{q.Source, l.ref(q.Source).Name, q.Amount.String()})
 			}
@@ -423,7 +455,7 @@ func (e *Engine) Costs(ctx context.Context) (map[string]decimal.Decimal, *Ledger
 	}
 	pctx, cancel := context.WithTimeout(ctx, e.Wait)
 	defer cancel()
-	p := e.pricer(pctx)
+	p := e.pricer(pctx, l)
 	value := func(a model.Amount, at time.Time) (decimal.Decimal, bool) {
 		if a.Qty.IsZero() {
 			return decimal.Zero, true

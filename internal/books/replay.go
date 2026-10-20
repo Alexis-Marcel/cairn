@@ -7,6 +7,7 @@ package books
 // coin.
 
 import (
+	"strings"
 	"time"
 
 	"github.com/Alexis-Marcel/fundarr/pkg/model"
@@ -21,11 +22,12 @@ type tally struct {
 	// Cost of what is held, across accounts.
 	Cost decimal.Decimal
 	// Realized: gains on disposals for cash or stablecoins, minus fees.
-	// Rewards: what came in for nothing, at its day's value. Fees: paid on
-	// operations in this coin, in euros. Bought: cost of what was bought or
-	// swapped in, or deposited from outside.
-	Realized, Rewards, Fees, Bought decimal.Decimal
-	First, Last                     time.Time // first and last operation
+	// Rewards: what came in for nothing, at its day's value. Dividends: the
+	// cash it paid, net of tax withheld. Fees: paid on operations in this
+	// coin, in euros. Bought: cost of what was bought or swapped in, or
+	// deposited from outside.
+	Realized, Rewards, Dividends, Fees, Bought decimal.Decimal
+	First, Last                                time.Time // first and last operation
 }
 
 // Qty held, across accounts (an account showing more leaving than
@@ -56,11 +58,28 @@ type replay struct {
 	pairs map[string]string // deposit → withdrawal
 	out   map[string]bool   // withdrawals paired with a deposit
 	coins map[string]*tally
-	// Fees: every fee paid, in euros. Rewards: every reward.
-	Fees, Rewards decimal.Decimal
-	Markers       []Marker
-	// RewardDays: each reward's value, by day, for the cumulative chart.
-	RewardDays map[string]decimal.Decimal
+	// Fees: every fee paid on investments, in euros. Rewards: every reward
+	// in crypto or securities. Dividends: paid by securities, net of tax.
+	// Interest: on cash, and cash bonuses (outside the portfolio's value).
+	Fees, Rewards, Dividends, Interest decimal.Decimal
+	Markers                            []Marker
+	// Income: each day's rewards, dividends and interest, for the charts.
+	Income   map[string]*Income
+	withheld map[string]decimal.Decimal
+}
+
+// Income is what came in on its own over a time.
+type Income struct {
+	Rewards, Dividends, Interest decimal.Decimal
+}
+
+func (r *replay) income(day string) *Income {
+	i := r.Income[day]
+	if i == nil {
+		i = &Income{}
+		r.Income[day] = i
+	}
+	return i
 }
 
 func newReplay(l *Ledger, price portfolio.Price) *replay {
@@ -72,14 +91,83 @@ func newReplay(l *Ledger, price portfolio.Price) *replay {
 		return u.Mul(a.Qty), ok
 	}
 	r := &replay{price: price, book: model.Books(l.Acts, l.Pairs, value), pairs: l.Pairs, out: map[string]bool{},
-		coins: map[string]*tally{}, RewardDays: map[string]decimal.Decimal{}}
+		coins: map[string]*tally{}, Income: map[string]*Income{}, withheld: withheld(l.Acts)}
 	for _, o := range l.Pairs {
 		r.out[o] = true
 	}
 	return r
 }
 
-func crypto(a model.Asset) bool { return a.Kind == model.Crypto }
+// held: what the portfolio counts, crypto and securities; cash is apart.
+func held(a model.Asset) bool { return a.Kind == model.Crypto || a.Kind == model.Security }
+
+// card: a payment or a cash withdrawal with a platform's card (Trade
+// Republic's), or its fee: spending, neither an investment nor a loss.
+func card(a model.Activity) bool {
+	if a.Base.Asset.Kind != model.Fiat {
+		return false
+	}
+	n := strings.ToLower(a.Note)
+	return strings.HasPrefix(n, "card") || strings.HasPrefix(n, "cash withdrawal")
+}
+
+// taxKey ties the tax withheld on a payment to it: Fundarr books it apart,
+// under the payment's native id and ":tax".
+func taxKey(source, native string) string { return source + "\x00" + native }
+
+// withheld: the tax taken from each dividend (or given back), in euros.
+func withheld(acts []model.Activity) map[string]decimal.Decimal {
+	out := map[string]decimal.Decimal{}
+	for _, a := range acts {
+		native, ok := strings.CutSuffix(a.NativeID, ":tax")
+		if !ok || a.Base.Asset.Kind != model.Fiat || a.Base.Asset.Symbol != Currency {
+			continue
+		}
+		k := taxKey(a.SourceID, native)
+		switch a.Type {
+		case model.Tax:
+			out[k] = out[k].Add(a.Base.Qty)
+		case model.Deposit:
+			out[k] = out[k].Sub(a.Base.Qty)
+		}
+	}
+	return out
+}
+
+// dividend: what a dividend brought, in euros, net of its fee and tax.
+func dividend(a model.Activity, taxes map[string]decimal.Decimal, worth func(model.Amount, time.Time) decimal.Decimal) decimal.Decimal {
+	v := worth(a.Base, a.Time)
+	if a.Fee != nil && a.Fee.Asset.Kind == model.Fiat {
+		v = v.Sub(worth(*a.Fee, a.Time))
+	}
+	if a.NativeID != "" {
+		v = v.Sub(taxes[taxKey(a.SourceID, a.NativeID)])
+	}
+	return v
+}
+
+// paidOut is every dividend's net amount, oldest first: money that left the
+// portfolio for cash, as a sale's does.
+func paidOut(acts []model.Activity, price portfolio.Price) []Flow {
+	taxes := withheld(acts)
+	worth := func(a model.Amount, at time.Time) decimal.Decimal {
+		u, _ := price(a.Asset, at)
+		return u.Mul(a.Qty)
+	}
+	var out []Flow
+	for _, a := range acts {
+		if a.Type == model.Dividend {
+			out = append(out, Flow{a.Time, dividend(a, taxes, worth)})
+		}
+	}
+	return out
+}
+
+// Flow is an amount on a moment.
+type Flow struct {
+	T time.Time
+	V decimal.Decimal
+}
 
 // worth of an amount on a day; unpriced counts as 0.
 func (r *replay) worth(a model.Amount, at time.Time) decimal.Decimal {
@@ -112,7 +200,7 @@ func (r *replay) coin(a model.Asset, at time.Time) *tally {
 
 // move adds a signed quantity of a crypto to an account.
 func (r *replay) move(src string, a model.Amount, sign int64, at time.Time) *tally {
-	if !crypto(a.Asset) {
+	if !held(a.Asset) {
 		return nil
 	}
 	t := r.coin(a.Asset, at)
@@ -152,7 +240,7 @@ func (r *replay) apply(a model.Activity) {
 		if a.Side == model.Sell {
 			got, given = *a.Quote, a.Base
 		}
-		if !crypto(got.Asset) && !crypto(given.Asset) {
+		if !held(got.Asset) && !held(given.Asset) {
 			break
 		}
 		net := got
@@ -185,9 +273,25 @@ func (r *replay) apply(a model.Activity) {
 			// Taken from the pool apart (pkg/portfolio counts it against the gain).
 			feeOn.Realized = feeOn.Realized.Sub(r.book.Fees[a.ID])
 		}
+	case a.Type == model.Dividend:
+		v := dividend(a, r.withheld, r.worth)
+		if a.Quote != nil && held(a.Quote.Asset) {
+			t := r.coin(a.Quote.Asset, a.Time)
+			t.Dividends = t.Dividends.Add(v)
+		}
+		r.Dividends = r.Dividends.Add(v)
+		d := r.income(day)
+		d.Dividends = d.Dividends.Add(v)
+		return // its fee is netted
 	case a.Inflow():
 		t := r.move(a.SourceID, a.Base, 1, a.Time)
 		if t == nil {
+			if (a.Type == model.Interest || a.Type == model.Reward) && a.Base.Asset.Kind == model.Fiat {
+				v := r.worth(a.Base, a.Time)
+				r.Interest = r.Interest.Add(v)
+				d := r.income(day)
+				d.Interest = d.Interest.Add(v)
+			}
 			break
 		}
 		c, ok := r.book.Costs[a.ID]
@@ -198,13 +302,14 @@ func (r *replay) apply(a model.Activity) {
 		case a.Type != model.Deposit && a.Type != model.Adjustment:
 			v := r.worth(a.Base, a.Time)
 			t.Rewards, r.Rewards = t.Rewards.Add(v), r.Rewards.Add(v)
-			r.RewardDays[day] = r.RewardDays[day].Add(v)
+			d := r.income(day)
+			d.Rewards = d.Rewards.Add(v)
 		case r.external(a) && ok:
 			t.Bought = t.Bought.Add(c)
 		}
 		feeOn = t
 	case a.Outflow():
-		if a.Type == model.Fee {
+		if a.Type == model.Fee && !card(a) {
 			r.Fees = r.Fees.Add(r.worth(a.Base, a.Time))
 		}
 		t := r.move(a.SourceID, a.Base, -1, a.Time)
@@ -224,7 +329,7 @@ func (r *replay) apply(a model.Activity) {
 		}
 		feeOn = t
 	}
-	if a.Fee == nil || a.Fee.Qty.IsZero() {
+	if a.Fee == nil || a.Fee.Qty.IsZero() || card(a) {
 		return
 	}
 	v := r.worth(*a.Fee, a.Time)
