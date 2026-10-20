@@ -53,7 +53,7 @@ type entry struct {
 func New(base, token string, ttl time.Duration) (*Proxy, error) {
 	u, err := url.Parse(strings.TrimRight(base, "/"))
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return nil, fmt.Errorf("FUNDARR_URL %q is not an http(s) address", base)
+		return nil, fmt.Errorf("%q is not an http(s) address", base)
 	}
 	return &Proxy{
 		base:   u,
@@ -147,7 +147,7 @@ func (p *Proxy) fetch(r *http.Request, path string) (entry, error) {
 	switch {
 	case resp.StatusCode == http.StatusOK:
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return entry{}, &upstreamError{http.StatusBadGateway, "Fundarr refuse le jeton (FUNDARR_TOKEN)"}
+		return entry{}, &upstreamError{http.StatusBadGateway, "Fundarr refuse le jeton"}
 	case resp.StatusCode == http.StatusNotFound:
 		return entry{}, &upstreamError{http.StatusNotFound, "Introuvable dans Fundarr"}
 	case resp.StatusCode >= 400 && resp.StatusCode < 500:

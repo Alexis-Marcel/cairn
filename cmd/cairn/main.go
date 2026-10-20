@@ -1,8 +1,9 @@
 // Cairn: where my crypto stands, read from Fundarr.
 //
 // One binary: it serves the UI and forwards the UI's reads to Fundarr's read
-// API with the token, which stays on the server. There is no sign-in: put it
-// behind a reverse proxy that does it.
+// API with the token, which stays on the server. The token comes from the
+// environment or from the first-run page, saved in CAIRN_DATA. There is no
+// sign-in: put it behind a reverse proxy that does it.
 package main
 
 import (
@@ -18,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Alexis-Marcel/cairn/internal/proxy"
+	"github.com/Alexis-Marcel/cairn/internal/setup"
 	"github.com/Alexis-Marcel/cairn/web"
 )
 
@@ -55,11 +56,8 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("CAIRN_CACHE: %w", err)
 	}
-	token := env("FUNDARR_TOKEN", "")
-	if token == "" {
-		log.Warn("FUNDARR_TOKEN is empty: Fundarr will refuse the reads")
-	}
-	p, err := proxy.New(env("FUNDARR_URL", "http://localhost:9494"), token, ttl)
+	data := env("CAIRN_DATA", "/data")
+	s, err := setup.New(data, setup.Conn{URL: env("FUNDARR_URL", ""), Token: env("FUNDARR_TOKEN", "")}, ttl)
 	if err != nil {
 		return err
 	}
@@ -69,7 +67,8 @@ func run(log *slog.Logger) error {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/api/", p)
+	mux.Handle("/api/setup", s)
+	mux.Handle("/api/", s.API())
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("ok"))
 	})
@@ -84,7 +83,11 @@ func run(log *slog.Logger) error {
 		defer cancel()
 		srv.Shutdown(shut)
 	}()
-	log.Info("cairn", "version", version, "addr", addr, "fundarr", env("FUNDARR_URL", "http://localhost:9494"))
+	fundarr, fromEnv := s.Linked()
+	if fundarr == "" {
+		fundarr = "(not linked yet: open Cairn)"
+	}
+	log.Info("cairn", "version", version, "addr", addr, "data", data, "fundarr", fundarr, "fromEnv", fromEnv)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
