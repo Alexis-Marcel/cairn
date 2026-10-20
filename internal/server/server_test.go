@@ -273,3 +273,35 @@ func TestPrice(t *testing.T) {
 		t.Fatal("unknown coin")
 	}
 }
+
+// The statistics answer, and the edit of an operation shows in them at once.
+func TestStatsRoutes(t *testing.T) {
+	c := newClient(t)
+	buy := c.add(map[string]string{"kind": "buy", "date": "2024-01-10", "newAccount": "Binance", "asset": "BTC", "qty": "0.1", "total": "4000"})
+	var o struct {
+		Total struct{ Value, Invested float64 } `json:"total"`
+	}
+	if c.do("GET", "/api/overview", nil, &o) != 200 || o.Total.Value != 6000 || o.Total.Invested != 4000 {
+		t.Fatalf("%+v", o)
+	}
+	var s struct {
+		Assets []struct{ Gain float64 } `json:"assets"`
+	}
+	if c.do("GET", "/api/stats", nil, &s) != 200 || len(s.Assets) != 1 || s.Assets[0].Gain != 2000 {
+		t.Fatalf("%+v", s)
+	}
+	c.do("PUT", "/api/operations/"+buy.ID, map[string]string{"kind": "buy", "date": "2024-01-10", "account": buy.Account.ID, "asset": "BTC", "qty": "0.1", "total": "5000"}, nil)
+	if c.do("GET", "/api/stats", nil, &s) != 200 || s.Assets[0].Gain != 1000 {
+		t.Fatalf("after the edit: %+v", s)
+	}
+	var a struct {
+		Markers []struct{ Price float64 } `json:"markers"`
+	}
+	if c.do("GET", "/api/assets/btc", nil, &a) != 200 || len(a.Markers) != 1 || a.Markers[0].Price != 50000 {
+		t.Fatalf("%+v", a)
+	}
+	var e struct{ Error string }
+	if c.do("GET", "/api/assets/DOGE", nil, &e) != 404 || e.Error == "" {
+		t.Fatal("unknown coin")
+	}
+}

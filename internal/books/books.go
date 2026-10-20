@@ -44,6 +44,7 @@ type Engine struct {
 	led   atomic.Pointer[Ledger]
 	costs atomic.Pointer[costMemo]
 	memo  map[string]memo
+	ser   *series // the history behind the statistics
 }
 
 type memo struct {
@@ -470,6 +471,10 @@ func (e *Engine) Warm(ctx context.Context) {
 	if _, err := e.Portfolio(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		return
 	}
+	if _, err := e.Overview(ctx); err != nil {
+		return
+	}
+	e.Stats(ctx)
 	if _, err := e.History(ctx, "", "", "day"); err != nil {
 		var be *Error
 		if errors.As(err, &be) && be.Status == 422 {

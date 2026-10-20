@@ -52,6 +52,9 @@ func (s *Server) Handler(dist fs.FS) http.Handler {
 	api.HandleFunc("GET /api/status", s.status)
 	api.HandleFunc("GET /api/portfolio", s.portfolio)
 	api.HandleFunc("GET /api/portfolio/history", s.history)
+	api.HandleFunc("GET /api/overview", s.overview)
+	api.HandleFunc("GET /api/stats", s.stats)
+	api.HandleFunc("GET /api/assets/{symbol}", s.asset)
 	api.HandleFunc("GET /api/tax/fr", s.taxFR)
 	api.HandleFunc("GET /api/activities", s.activities)
 
@@ -215,6 +218,33 @@ func (s *Server) portfolio(w http.ResponseWriter, r *http.Request) {
 func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	b, err := s.Books.History(r.Context(), q.Get("from"), q.Get("to"), q.Get("step"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeRaw(w, b)
+}
+
+func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
+	b, err := s.Books.Overview(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeRaw(w, b)
+}
+
+func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
+	b, err := s.Books.Stats(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeRaw(w, b)
+}
+
+func (s *Server) asset(w http.ResponseWriter, r *http.Request) {
+	b, err := s.Books.Asset(r.Context(), r.PathValue("symbol"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
