@@ -14,10 +14,11 @@ import { Assets } from "./pages/Assets";
 import { Home } from "./pages/Home";
 import { Import } from "./pages/Import";
 import { Settings } from "./pages/Settings";
+import { Strategy } from "./pages/Strategy";
 import { Taxes } from "./pages/Taxes";
 import { Welcome } from "./pages/Welcome";
 
-type Route = { page: "home" | "assets" | "asset" | "activity" | "taxes" | "settings" | "import"; symbol?: string };
+type Route = { page: "home" | "assets" | "asset" | "activity" | "strategy" | "taxes" | "settings" | "import"; symbol?: string };
 
 function route(): Route {
   const p = decodeURIComponent(location.pathname.replace(/\/+$/, "")) || "/";
@@ -29,6 +30,8 @@ function route(): Route {
     case "/activite":
     case "/operations":
       return { page: "activity" };
+    case "/strategie":
+      return { page: "strategy" };
     case "/impots":
       return { page: "taxes" };
     case "/reglages":
@@ -44,6 +47,7 @@ const titles: Record<Route["page"], string> = {
   assets: "Actifs – Cairn",
   asset: "Cairn",
   activity: "Activité – Cairn",
+  strategy: "Stratégie – Cairn",
   taxes: "Impôts – Cairn",
   settings: "Réglages – Cairn",
   import: "Importer – Cairn",
@@ -73,6 +77,18 @@ const TABS: { path: string; label: string; page: Route["page"][]; icon: React.Re
     label: "Activité",
     page: ["activity"],
     icon: <path d="M4 7h16M4 12h16M4 17h10" />,
+  },
+  {
+    path: "/strategie",
+    label: "Stratégie",
+    page: ["strategy"],
+    icon: (
+      <>
+        <circle cx="12" cy="12" r="8" />
+        <circle cx="12" cy="12" r="4" />
+        <circle cx="12" cy="12" r="0.6" />
+      </>
+    ),
   },
 ];
 
@@ -143,6 +159,9 @@ export function App() {
       break;
     case "asset":
       page = <Asset key={r.symbol} symbol={r.symbol!} rev={rev} go={go} onOpen={(op) => setDialog({ op })} />;
+      break;
+    case "strategy":
+      page = <Strategy rev={rev} go={go} />;
       break;
     case "taxes":
       page = <Taxes rev={rev} />;
