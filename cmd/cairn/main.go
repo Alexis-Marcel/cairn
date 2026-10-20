@@ -1,4 +1,4 @@
-// Cairn: where my crypto stands, and the French 2086 form.
+// Cairn: where my crypto stands, how it got there, and the French 2086 form.
 //
 // One binary: it serves the UI and its API, keeps the activities in SQLite
 // (CAIRN_DATA/cairn.db) and works the portfolio out itself. They are entered

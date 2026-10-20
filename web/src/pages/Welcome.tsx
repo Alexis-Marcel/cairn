@@ -27,7 +27,7 @@ export function Welcome({ onAdd, onImport, onSync }: { onAdd: () => void; onImpo
     <div className="welcome">
       <Mark />
       <h1>Pose la première pierre</h1>
-      <p className="muted">Cairn suit tes cryptos et prépare ta déclaration 2086.</p>
+      <p className="muted">Ce que valent tes cryptos, et ce qu'elles t'ont rapporté.</p>
       <ul className="ways">
         {ways.map((w, n) => (
           <li key={w.title}>
