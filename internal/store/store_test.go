@@ -203,3 +203,36 @@ func TestOpenAndMigrate(t *testing.T) {
 		t.Fatalf("database readable by Cairn alone: %v", fi.Mode())
 	}
 }
+
+// A broker's sub-accounts (Trade Republic's CTO and PEA) are accounts of
+// their own; a wallet's chains stay one.
+func TestSubAccounts(t *testing.T) {
+	st := testutil.Store(t)
+	st.SetLink(ctx, "http://f", "t")
+	sub := func(id, src, kind, name, account string) api.Change {
+		c := change(id, src, name, "1", "", model.Deposit)
+		c.Activity.Source.Kind, c.Activity.Account = kind, account
+		return c
+	}
+	err := st.ApplyChanges(ctx, api.Changes{Cursor: "e.3", Changes: []api.Change{
+		sub("a", "tr", "traderepublic", "Trade Republic", ""),
+		sub("b", "tr", "traderepublic", "Trade Republic", "PEA"),
+		sub("c", "led", "wallet", "Ledger", "solana"),
+		sub("d", "led", "wallet", "Ledger", ""),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	accs, _ := st.Accounts(ctx)
+	var names []string
+	for _, a := range accs {
+		names = append(names, a.Name)
+	}
+	if len(accs) != 3 || names[0] != "Ledger" || names[1] != "Trade Republic CTO" || names[2] != "Trade Republic PEA" {
+		t.Fatalf("%v", names)
+	}
+	b, _ := st.Get(ctx, "b")
+	if b.SourceID != store.FundarrAccountID("tr")+".pea" || b.Account != "PEA" {
+		t.Fatalf("%+v", b)
+	}
+}

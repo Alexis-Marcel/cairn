@@ -287,6 +287,38 @@ func (s *Store) DropFundarr(ctx context.Context) error {
 // FundarrAccountID is the account of a Fundarr source.
 func FundarrAccountID(sourceID string) string { return "f-" + sourceID }
 
+// split: the kinds of Fundarr source whose sub-accounts are accounts of
+// their own (a broker's securities account and its PEA), with the name of
+// the main one. A wallet's chains stay one account.
+var split = map[string]string{"traderepublic": "CTO"}
+
+// fundarrAccount is the account an activity of Fundarr goes to: its
+// source, or the source's sub-account when they are told apart.
+func fundarrAccount(a api.Activity) (id, sourceID, name string) {
+	src := a.Source.ID
+	if src == "" {
+		src = a.SourceID
+	}
+	name = cleanName(a.Source.Name)
+	if name == "" {
+		name = src
+	}
+	main, ok := split[a.Source.Kind]
+	if !ok || src == "" {
+		return FundarrAccountID(src), src, name
+	}
+	if a.Account == "" {
+		return FundarrAccountID(src), src, cleanName(name + " " + main)
+	}
+	sub := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			return r
+		}
+		return '-'
+	}, strings.ToLower(a.Account))
+	return FundarrAccountID(src) + "." + sub, src + "/" + a.Account, cleanName(name + " " + a.Account)
+}
+
 // ApplyChanges applies a page of Fundarr's changes feed and keeps its
 // cursor, in one transaction: a crash leaves the copy as it was before the
 // page or after it.
@@ -305,19 +337,11 @@ func (s *Store) ApplyChanges(ctx context.Context, page api.Changes) error {
 			}
 		case ch.Op == api.Upsert && ch.Activity != nil:
 			a := *ch.Activity
-			src := a.Source.ID
-			if src == "" {
-				src = a.SourceID
-			}
+			acc, src, name := fundarrAccount(a)
 			if src == "" {
 				continue
 			}
-			acc := FundarrAccountID(src)
 			if !seen[acc] {
-				name := cleanName(a.Source.Name)
-				if name == "" {
-					name = src
-				}
 				if _, err := tx.ExecContext(ctx, `INSERT INTO accounts (id, name, origin, source_id, created) VALUES (?, ?, 'fundarr', ?, ?)
 					ON CONFLICT(id) DO UPDATE SET name = excluded.name, origin = 'fundarr', source_id = excluded.source_id`,
 					acc, name, src, time.Now().UnixMilli()); err != nil {
@@ -459,4 +483,21 @@ func (s *Store) PutPrices(ctx context.Context, pair string, w price.Window, clos
 		return err
 	}
 	return tx.Commit()
+}
+
+// ---- migrations
+
+// kSplit: Fundarr's copy was made again since a broker's sub-accounts (CTO,
+// PEA) are accounts of their own.
+const kSplit = "migrated.split_accounts"
+
+// migrate brings an earlier database up to date, once.
+func (s *Store) migrate(ctx context.Context) error {
+	done, err := s.setting(ctx, s.db, kSplit)
+	if err != nil || done != "" {
+		return err
+	}
+	// Copied before: read the whole history again, so every activity lands
+	// in its sub-account (put moves it) and accounts get their names.
+	return s.Set(ctx, map[string]string{kSplit: "1", kCursor: ""})
 }
