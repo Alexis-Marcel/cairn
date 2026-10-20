@@ -181,15 +181,30 @@ export function Taxes({ rev }: { rev: number }) {
             </>
           )}
 
-          {t.notes.length > 0 && (
-            <ul className="notes">
-              {t.notes.map((n) => (
+          {t.notes.some(warning) && (
+            <ul className="notes warn">
+              {t.notes.filter(warning).map((n) => (
                 <li key={n}>{n}</li>
               ))}
             </ul>
+          )}
+          {t.notes.some((n) => !warning(n)) && (
+            <details className="notes-more">
+              <summary>Comment c'est calculé</summary>
+              <ul className="notes">
+                {t.notes
+                  .filter((n) => !warning(n))
+                  .map((n) => (
+                    <li key={n}>{n}</li>
+                  ))}
+              </ul>
+            </details>
           )}
         </div>
       )}
     </div>
   );
 }
+
+/** A note about this portfolio (a coin without a price), not about the method. */
+const warning = (n: string) => n.startsWith("Pas de cours");

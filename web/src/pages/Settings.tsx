@@ -5,11 +5,24 @@ import { get, message, send, useLoad, type Account, type SyncState } from "../ap
 import { LinkForm } from "../components/LinkForm";
 import { ago } from "../format";
 
-export function Settings({ sync, rev, onChange, onImport }: { sync: SyncState; rev: number; onChange: () => void; onImport: () => void }) {
+export function Settings({
+  sync,
+  rev,
+  onChange,
+  onImport,
+  onFirstLink,
+}: {
+  sync: SyncState;
+  rev: number;
+  onChange: () => void;
+  onImport: () => void;
+  /** A first link, with nothing in Cairn yet: the portfolio is what to see next. */
+  onFirstLink?: () => void;
+}) {
   return (
     <div className="settings">
       <h1>Réglages</h1>
-      <Fundarr sync={sync} onChange={onChange} />
+      <Fundarr sync={sync} onChange={onChange} onFirstLink={onFirstLink} />
       <Accounts rev={rev} onChange={onChange} />
       <section aria-labelledby="h-data">
         <h2 id="h-data">Fichiers</h2>
@@ -26,7 +39,7 @@ export function Settings({ sync, rev, onChange, onImport }: { sync: SyncState; r
   );
 }
 
-function Fundarr({ sync, onChange }: { sync: SyncState; onChange: () => void }) {
+function Fundarr({ sync, onChange, onFirstLink }: { sync: SyncState; onChange: () => void; onFirstLink?: () => void }) {
   const [mode, setMode] = useState<"view" | "change" | "unlink">(() => (location.hash === "#fundarr" && !sync.linked ? "change" : "view"));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -60,6 +73,7 @@ function Fundarr({ sync, onChange }: { sync: SyncState; onChange: () => void }) 
             onLinked={() => {
               setMode("view");
               onChange();
+              onFirstLink?.();
             }}
             onCancel={() => setMode("view")}
           />
@@ -75,19 +89,26 @@ function Fundarr({ sync, onChange }: { sync: SyncState; onChange: () => void }) 
         )
       ) : (
         <>
-          <dl className="linked">
-            <dt>Adresse</dt>
-            <dd>{sync.url}</dd>
-          </dl>
-          <p className={sync.lastError ? "sync-line down" : "sync-line muted"}>
-            {busy || sync.running
-              ? "Synchronisation…"
-              : sync.lastError
-                ? sync.lastError
-                : sync.lastSync
-                  ? `Synchronisé ${ago(sync.lastSync)}`
-                  : "Pas encore synchronisé"}
-          </p>
+          <div className="link-state">
+            <span className={sync.lastError ? "link-dot down" : busy || sync.running ? "link-dot busy" : "link-dot"} aria-hidden />
+            <div className="link-text">
+              <p className={sync.lastError ? "down" : ""} aria-live="polite">
+                {busy || sync.running
+                  ? "Synchronisation…"
+                  : sync.lastError
+                    ? sync.lastError
+                    : sync.lastSync
+                      ? `Synchronisé ${ago(sync.lastSync)}`
+                      : "Pas encore synchronisé"}
+              </p>
+              <p className="muted link-url">{sync.url}</p>
+            </div>
+            {mode === "view" && (
+              <button type="button" className="btn" onClick={() => act(() => send("POST", "sync/now"))} disabled={busy || sync.running}>
+                Synchroniser
+              </button>
+            )}
+          </div>
           {mode === "change" ? (
             <LinkForm
               url={sync.url}
@@ -116,23 +137,18 @@ function Fundarr({ sync, onChange }: { sync: SyncState; onChange: () => void }) 
           ) : (
             <>
               {err}
-              <div className="actions">
-                <button type="button" className="btn" onClick={() => act(() => send("POST", "sync/now"))} disabled={busy || sync.running}>
-                  Synchroniser
-                </button>
-                {sync.fromEnv ? (
-                  <span className="muted note">Fixé par l'environnement.</span>
-                ) : (
-                  <>
-                    <button type="button" className="btn quiet" onClick={() => setMode("change")}>
-                      Changer
-                    </button>
-                    <button type="button" className="btn quiet" onClick={() => setMode("unlink")}>
-                      Délier
-                    </button>
-                  </>
-                )}
-              </div>
+              {sync.fromEnv ? (
+                <p className="muted small-note">Lien fixé par l'environnement.</p>
+              ) : (
+                <div className="actions link-actions">
+                  <button type="button" className="btn quiet small" onClick={() => setMode("change")}>
+                    Changer
+                  </button>
+                  <button type="button" className="btn quiet small" onClick={() => setMode("unlink")}>
+                    Délier
+                  </button>
+                </div>
+              )}
               <Notify sync={sync} onChange={onChange} />
             </>
           )}
@@ -252,6 +268,8 @@ function Accounts({ rev, onChange }: { rev: number; onChange: () => void }) {
   };
 
   if (!list.data || list.data.length === 0) return null;
+  // Read-only accounts are told apart only when there are others.
+  const mixed = new Set(list.data.map((a) => a.origin)).size > 1;
   return (
     <section aria-labelledby="h-accounts">
       <h2 id="h-accounts">Comptes</h2>
@@ -278,7 +296,7 @@ function Accounts({ rev, onChange }: { rev: number; onChange: () => void }) {
               <>
                 <span className="acc-name">
                   {a.name}
-                  {a.origin === "fundarr" && <span className="badge fundarr">Fundarr</span>}
+                  {mixed && a.origin === "fundarr" && <span className="badge fundarr">Fundarr</span>}
                 </span>
                 <span className="muted num">{a.count === 0 ? "Aucune opération" : `${a.count} opération${a.count > 1 ? "s" : ""}`}</span>
                 {a.origin === "manual" && (

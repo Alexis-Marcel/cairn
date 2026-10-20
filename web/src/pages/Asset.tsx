@@ -301,7 +301,7 @@ export function Asset({ symbol, rev, go, onOpen }: { symbol: string; rev: number
         </div>
         {ops.data ? (
           <>
-            <OpList items={ops.data.items} onOpen={onOpen} />
+            <OpList items={ops.data.items} onOpen={onOpen} sameAsset />
             {ops.data.total > ops.data.items.length && (
               <button type="button" className="btn more" onClick={() => setOpsLimit((l) => l + 40)} disabled={ops.loading}>
                 Voir plus ({ops.data.total - ops.data.items.length})

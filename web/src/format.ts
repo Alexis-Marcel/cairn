@@ -61,6 +61,9 @@ export const monthYear = (t: number) => dMonthYear.format(t);
 /** A moment, in the browser's time zone: 12 mars 2026. */
 export const date = (iso: string) => dLocal.format(new Date(iso));
 export const time = (iso: string) => tLocal.format(new Date(iso));
+const dDayLocal = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short" });
+/** A moment's day within its month, in the browser's time zone: 12 mars. */
+export const dayOf = (iso: string) => dDayLocal.format(new Date(iso));
 
 /** The CSS class of a signed amount. */
 export const tone = (n: number) => (n > 0 ? "up" : n < 0 ? "down" : "");
