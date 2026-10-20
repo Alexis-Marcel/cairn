@@ -166,7 +166,7 @@ func (s *Syncer) page(ctx context.Context, l store.Link, cursor string) (api.Cha
 		io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
 		return page, errGone
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return page, errors.New("Jeton refusé par Fundarr")
+		return page, errors.New(refused(resp))
 	case resp.StatusCode == http.StatusNotFound:
 		return page, errors.New("Ce Fundarr n'a pas de flux de changements : mets-le à jour")
 	case resp.StatusCode != http.StatusOK:
@@ -320,6 +320,15 @@ func (s *Syncer) Check(ctx context.Context, base, token string) error {
 	return nil
 }
 
+// refused says who said no. Fundarr answers in JSON; anything else is a
+// proxy or firewall in front of it, which a token cannot get through.
+func refused(resp *http.Response) string {
+	if strings.Contains(resp.Header.Get("Content-Type"), "json") {
+		return "Jeton refusé par Fundarr"
+	}
+	return "Bloqué avant Fundarr (proxy ?) : essaie son adresse interne, comme http://fundarr:9494"
+}
+
 func (s *Syncer) check(ctx context.Context, base, token, path string) error {
 	u, err := url.Parse(base)
 	if err != nil {
@@ -346,7 +355,7 @@ func (s *Syncer) check(ctx context.Context, base, token, path string) error {
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
-		return &CheckError{http.StatusUnprocessableEntity, "Jeton refusé par Fundarr"}
+		return &CheckError{http.StatusUnprocessableEntity, refused(resp)}
 	case resp.StatusCode == http.StatusNotFound && p == "/api/v1/changes":
 		return &CheckError{http.StatusBadGateway, "Ce Fundarr est trop ancien : mets-le à jour"}
 	case resp.StatusCode == http.StatusNotFound:

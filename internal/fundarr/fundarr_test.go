@@ -35,7 +35,9 @@ func (f *feed) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if r.Header.Get("Authorization") != "Bearer fdr_ok" {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(401)
+		w.Write([]byte(`{"error":"unauthorized"}`))
 		return
 	}
 	f.calls = append(f.calls, r.URL.RequestURI())
@@ -234,5 +236,17 @@ func TestNormalize(t *testing.T) {
 		if got := Normalize(in); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestRefusedByProxy(t *testing.T) {
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+	}))
+	defer proxy.Close()
+	s := &Syncer{}
+	err := s.check(context.Background(), proxy.URL, "fdr_ok", "/api/v1/sources")
+	if err == nil || !strings.Contains(err.Error(), "Bloqué avant Fundarr") {
+		t.Fatalf("got %v, want a proxy block", err)
 	}
 }
