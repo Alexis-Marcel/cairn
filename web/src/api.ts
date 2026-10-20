@@ -177,3 +177,27 @@ export function useLoad<T>(key: string | null, load: (signal: AbortSignal) => Pr
   const reload = useCallback(() => setTick((t) => t + 1), []);
   return { ...state, reload };
 }
+
+/** Which Fundarr Cairn reads (GET /api/setup); the token never comes back. */
+export interface Setup {
+  configured: boolean;
+  fromEnv: boolean;
+  url: string;
+}
+
+/** Links Cairn to a Fundarr, or unlinks it (null). Cairn checks the link first. */
+export async function setLink(link: { url: string; token: string } | null): Promise<Setup> {
+  let resp: Response;
+  try {
+    resp = await fetch("/api/setup", {
+      method: link ? "POST" : "DELETE",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: link ? JSON.stringify(link) : "{}",
+    });
+  } catch {
+    throw new ApiError("Cairn est injoignable");
+  }
+  const body = await resp.json().catch(() => null);
+  if (!resp.ok) throw new ApiError(body?.error ?? `Erreur ${resp.status}`, resp.status);
+  return body;
+}
