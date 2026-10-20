@@ -130,6 +130,10 @@ func open(dsn string) (*Store, error) {
 	}
 	s := &Store{db: db}
 	s.version.Store(time.Now().UnixNano())
+	if err := s.migrate(context.Background()); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
 	return s, nil
 }
 
