@@ -1,10 +1,10 @@
-// Stratégie: the plan against the portfolio. Where the money sits against
-// its target, where the next euros go, the monthly plan, where it could
-// lead, what a crisis would cost, what weighs too much, where the coins are
-// kept, the costs, the taxes, and the year in short. The alerts come first.
+// Stratégie: the plan as a model portfolio, against what is held. What to
+// do now comes first (the moves that cost no tax before the others), then
+// the model line by line, where the next euros go, the monthly plan, where
+// it could lead, the risks, the costs and taxes, and the year in short.
 
 import { useMemo, useState } from "react";
-import { get, useLoad, type Overview, type Plan, type Portfolio, type Stats, type TaxFR } from "../api";
+import { get, useLoad, type Account, type Overview, type Plan, type Portfolio, type Stats, type TaxFR } from "../api";
 import { Coin } from "../components/Coin";
 import { LineChart } from "../components/LineChart";
 import { PlanForm } from "../components/PlanForm";
@@ -20,15 +20,14 @@ import {
   ctoLines,
   custody,
   grow,
+  model,
   nextSplit,
   peaFive,
-  position,
   RATES,
   reached,
-  SLEEVE_NAME,
-  SLEEVES,
-  targets,
-  type Position,
+  todo,
+  type Model,
+  type Row,
 } from "../lib/strategy";
 
 const YEAR = new Date().getFullYear();
@@ -40,6 +39,7 @@ interface Data {
   ov: Overview;
   st: Stats;
   tax: TaxFR;
+  accounts: Account[];
 }
 
 export function Strategy({ rev, go }: { rev: number; go: (path: string) => void }) {
@@ -49,27 +49,28 @@ export function Strategy({ rev, go }: { rev: number; go: (path: string) => void 
   const ov = useLoad("ov" + rev, (s) => get<Overview>("overview", s));
   const st = useLoad("st" + rev, (s) => get<Stats>("stats", s));
   const tax = useLoad("tax" + rev, (s) => get<TaxFR>("tax/fr?year=" + YEAR, s));
+  const accounts = useLoad("acc" + rev, (s) => get<Account[]>("accounts", s));
   const [editing, setEditing] = useState(false);
 
-  const all = [plan, pf, ov, st, tax];
-  const failed = all.find((l) => l.error && !l.data);
+  const failed = [plan, pf, ov, st, tax, accounts].find((l) => l.error && !l.data);
   if (failed) return <Failed error={failed.error!} retry={failed.reload} />;
-  if (!plan.data || !pf.data || !ov.data || !st.data || !tax.data) return <Loading />;
-  const d: Data = { plan: plan.data, pf: pf.data, ov: ov.data, st: st.data, tax: tax.data };
+  if (!plan.data || !pf.data || !ov.data || !st.data || !tax.data || !accounts.data) return <Loading />;
+  const d: Data = { plan: plan.data, pf: pf.data, ov: ov.data, st: st.data, tax: tax.data, accounts: accounts.data };
 
   return (
     <div className="strategy">
       <div className="page-head">
         <h1>Stratégie</h1>
         <button type="button" className="btn" onClick={() => setEditing(true)}>
-          {d.plan.set ? "Modifier" : "Fixer ma cible"}
+          {d.plan.set ? "Modifier" : "Créer mon modèle"}
         </button>
       </div>
       <Body d={d} go={go} edit={() => setEditing(true)} />
       {editing && (
         <PlanForm
           plan={d.plan}
-          wallets={custody(d.pf, d.plan).list}
+          portfolio={d.pf}
+          accounts={d.accounts}
           onClose={() => setEditing(false)}
           onSaved={() => {
             setEditing(false);
@@ -82,157 +83,202 @@ export function Strategy({ rev, go }: { rev: number; go: (path: string) => void 
 }
 
 function Body({ d, go, edit }: { d: Data; go: (path: string) => void; edit: () => void }) {
-  const pos = useMemo(() => position(d.pf), [d.pf]);
+  const m = useMemo(() => model(d.pf, d.plan, d.accounts), [d.pf, d.plan, d.accounts]);
   const rate = Number(d.tax.total.rate) || 0.314;
+  const [amount, setAmount] = useState(() => String(Math.round(d.plan.monthly || m.waiting || 500)));
+  const place = (v: number) => {
+    setAmount(String(v));
+    document.getElementById("h-next")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   return (
     <>
-      {!d.plan.set && (
+      {d.plan.set ? (
+        <>
+          <Todos list={todo(m, d.plan, d.pf, rate)} place={place} />
+          <Targets m={m} plan={d.plan} />
+          <Next m={m} raw={amount} setRaw={setAmount} />
+        </>
+      ) : (
         <div className="plan-intro">
-          <p>Fixe ta répartition cible : Cairn te dit ensuite où placer chaque apport et te prévient quand tu t'en écartes.</p>
+          <p>Décris ton portefeuille modèle : chaque actif, où l'acheter et sa part. Cairn te dit ensuite quoi faire et où placer chaque apport.</p>
           <button type="button" className="btn primary" onClick={edit}>
-            Fixer ma cible
+            Créer mon modèle
           </button>
         </div>
       )}
-      {d.plan.set && <Alerts d={d} pos={pos} />}
-      <Targets plan={d.plan} pos={pos} />
-      <Next plan={d.plan} pos={pos} />
       <Monthly d={d} edit={edit} />
       <Projection d={d} />
       <section className="strat-sec" aria-labelledby="h-risk">
         <h2 id="h-risk">Risques</h2>
         <div className="strat-grid">
-          <Crisis pos={pos} total={d.ov.total.value} />
-          <Weight d={d} pos={pos} go={go} />
+          <Crisis m={m} total={d.ov.total.value} />
+          <Weight d={d} m={m} go={go} />
           <Custody d={d} edit={edit} />
         </div>
       </section>
       <Taxes d={d} rate={rate} edit={edit} />
-      <Year d={d} pos={pos} />
+      <Year d={d} m={m} />
     </>
   );
 }
 
-// ---- alerts
+// ---- what to do
 
-interface Alert {
-  level: "warn" | "info" | "good";
-  text: React.ReactNode;
+function Todos({ list, place }: { list: ReturnType<typeof todo>; place: (v: number) => void }) {
+  return (
+    <section className="strat-sec" aria-labelledby="h-todo">
+      <h2 id="h-todo">À faire</h2>
+      {list.length === 0 ? (
+        <p className="strat-ok">
+          <span className="dot" aria-hidden /> Rien à faire : ton portefeuille suit ton modèle.
+        </p>
+      ) : (
+        <ol className="todos">
+          {list.map((t) => (
+            <li key={t.key} className={t.level ?? ""}>
+              <span className="todo-text">{t.text}</span>
+              {t.tax && (t.tax.free ? <span className="tag free">Sans impôt</span> : <span className="tag taxed num">Impôt ≈ {eur(t.tax.amount)}</span>)}
+              {t.place !== undefined && (
+                <button type="button" className="link-btn" onClick={() => place(t.place!)}>
+                  Répartir
+                </button>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+      {list.length > 0 && <p className="muted strat-note">Chaque ligne disparaît d'elle-même une fois faite et synchronisée.</p>}
+    </section>
+  );
 }
 
-function alerts(d: Data, pos: Position): Alert[] {
-  const out: Alert[] = [];
-  const { plan } = d;
-  if (pos.invested > 0) {
-    const share = pos.crypto / pos.invested;
-    const aim = plan.crypto / 100;
-    const band = plan.band / 100;
-    if (share > aim + band)
-      out.push({
-        level: "warn",
-        text: `La crypto pèse ${pct(share)}, au-delà de ${pct(aim + band)} : revends-en ${eur((share - aim) * pos.invested)} pour revenir à ${pct(aim)}.`,
-      });
-    else if (share < aim - band)
-      out.push({
-        level: "warn",
-        text: `La crypto pèse ${pct(share)}, sous ${pct(Math.max(0, aim - band))} : tes prochains apports vont en priorité au bitcoin.`,
-      });
-    const c = concentration(d.pf, pos.invested);
-    for (const l of c.lines) {
-      if ((l.sleeve === "stock" || l.sleeve === "alt") && c.share(l.value) > plan.line / 100)
-        out.push({ level: "warn", text: `${l.name} pèse ${pct(c.share(l.value))} : plus que ta limite de ${plan.line} % par ligne.` });
-    }
-  }
-  if (pos.waiting >= 300 && pos.waiting > 0.03 * (pos.invested + pos.waiting))
-    out.push({ level: "info", text: `${eur(pos.waiting)} de liquidités attendent d'être placés.` });
-  const k = custody(d.pf, plan);
-  if (k.btc - k.btcMine >= 1000) out.push({ level: "info", text: `${eur(k.btc - k.btcMine)} de bitcoin restent sur des plateformes.` });
-  if (plan.pea) {
-    const { five, days } = peaFive(plan.pea);
-    if (days > 0 && days <= 90) out.push({ level: "good", text: `Ton PEA a 5 ans le ${date(five.toISOString())} : ne retire rien d'ici là.` });
-  }
-  if (!d.tax.total.exempt && Number(d.tax.total.disposals) > 0)
-    out.push({ level: "info", text: `Tes ventes de crypto de ${YEAR} dépassent 305 € : environ ${eur(d.tax.total.tax)} d'impôt à prévoir.` });
-  return out;
+// ---- the model against what is held
+
+function Gauge({ now, aim, off }: { now: number; aim: number; off: boolean }) {
+  const scale = Math.max(now, aim, 0.0001) > 0.5 ? 1 : 0.5;
+  return (
+    <span className="gauge-track" aria-hidden>
+      <span className={off ? "gauge-fill off" : "gauge-fill"} style={{ width: `${Math.min(100, (now / scale) * 100)}%` }} />
+      <span className="gauge-aim" style={{ left: `${Math.min(100, (aim / scale) * 100)}%` }} />
+    </span>
+  );
 }
 
-function Alerts({ d, pos }: { d: Data; pos: Position }) {
-  const list = alerts(d, pos);
-  if (!list.length)
+const drift = (now: number, aim: number) => {
+  const d = (now - aim) * 100;
+  return Math.abs(d) < 0.5 ? "dans la cible" : `${d > 0 ? "+" : "−"}${Math.abs(d).toFixed(0)} pt${Math.abs(d) >= 1.5 ? "s" : ""}`;
+};
+
+function Targets({ m, plan }: { m: Model; plan: Plan }) {
+  if (m.invested <= 0) return null;
+  const share = (v: number) => v / m.invested;
+  const band = plan.band / 100;
+  const cNow = share(m.crypto);
+  const outOf = (crypto: boolean) => m.out.filter((o) => o.crypto === crypto);
+  const group = (title: string, crypto: boolean) => {
+    const rows = m.rows.filter((r) => r.crypto === crypto);
+    const out = outOf(crypto);
+    const outValue = out.reduce((s, o) => s + o.value, 0);
+    if (!rows.length && !outValue) return null;
     return (
-      <p className="strat-ok">
-        <span className="dot" aria-hidden /> Tout est dans ta cible.
-      </p>
+      <tbody>
+        <tr className="model-group">
+          <th scope="rowgroup" colSpan={5}>
+            {title}
+          </th>
+        </tr>
+        {rows.map((r) => (
+          <ModelRow key={r.id} r={r} now={share(r.value)} band={band} />
+        ))}
+        {outValue >= 1 && (
+          <tr className="model-out">
+            <th scope="row">
+              <details>
+                <summary>
+                  Hors modèle <span className="muted">· {out.length} ligne{out.length > 1 ? "s" : ""}</span>
+                </summary>
+                <ul>
+                  {out.map((o) => (
+                    <li key={o.id}>
+                      <span className="clip">{o.name}</span>
+                      {o.sell && <span className="tag taxed">À vendre</span>}
+                      <span className="num muted">{eur(o.value)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </th>
+            <td className="model-gauge">
+              <Gauge now={share(outValue)} aim={0} off={false} />
+            </td>
+            <td className="num">{pct(share(outValue))}</td>
+            <td className="num muted">ne reçoit plus rien</td>
+            <td className="num muted">{eur(outValue)}</td>
+          </tr>
+        )}
+      </tbody>
     );
-  return (
-    <ul className="strat-alerts" aria-label="Alertes">
-      {list.map((a, n) => (
-        <li key={n} className={a.level}>
-          {a.text}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-// ---- targets
-
-function Gauge({ label, now, aim, band, value }: { label: string; now: number; aim: number; band: number; value: number }) {
-  const drift = (now - aim) * 100;
-  const off = Math.abs(drift) > band;
-  return (
-    <li className="gauge">
-      <span className="gauge-name">{label}</span>
-      <span className="gauge-track" aria-hidden>
-        <span className={off ? "gauge-fill off" : "gauge-fill"} style={{ width: `${Math.min(100, now * 100)}%` }} />
-        <span className="gauge-aim" style={{ left: `${aim * 100}%` }} />
-      </span>
-      <span className="num gauge-now">{pct(now)}</span>
-      <span className={`num gauge-drift ${off ? "off" : ""}`}>
-        {Math.abs(drift) < 0.5 ? "dans la cible" : `${drift > 0 ? "+" : "−"}${Math.abs(drift).toFixed(0)} pt${Math.abs(drift) >= 1.5 ? "s" : ""}`}
-        <span className="sr"> par rapport à la cible de {pct(aim)}</span>
-      </span>
-      <span className="num muted gauge-value">{eur(value)}</span>
-    </li>
-  );
-}
-
-function Targets({ plan, pos }: { plan: Plan; pos: Position }) {
-  if (pos.invested <= 0) return null;
-  const share = (v: number, of: number) => (of > 0 ? v / of : 0);
-  const v = pos.value;
+  };
   return (
     <section className="strat-sec" aria-labelledby="h-targets">
-      <h2 id="h-targets">Répartition</h2>
-      <p className="muted strat-lede">
-        La barre, c'est aujourd'hui ; le trait, ta cible. Liquidités à part : {eur(pos.waiting)}.
-      </p>
-      <ul className="gauges">
-        <Gauge label="Bourse" now={share(pos.bourse, pos.invested)} aim={1 - plan.crypto / 100} band={plan.band} value={pos.bourse} />
-        <Gauge label="Crypto" now={share(pos.crypto, pos.invested)} aim={plan.crypto / 100} band={plan.band} value={pos.crypto} />
-      </ul>
-      <div className="gauge-pair">
-        {pos.bourse > 0 && (
-          <div>
-            <h3>Dans la bourse</h3>
-            <ul className="gauges small">
-              <Gauge label="ETF" now={share(v.etf, pos.bourse)} aim={plan.etf / 100} band={plan.band} value={v.etf} />
-              <Gauge label="Actions" now={share(v.stock, pos.bourse)} aim={1 - plan.etf / 100} band={plan.band} value={v.stock} />
-            </ul>
-          </div>
-        )}
-        {pos.crypto > 0 && (
-          <div>
-            <h3>Dans la crypto</h3>
-            <ul className="gauges small">
-              <Gauge label="Bitcoin" now={share(v.btc, pos.crypto)} aim={plan.btc / 100} band={plan.band} value={v.btc} />
-              <Gauge label="Ether" now={share(v.eth, pos.crypto)} aim={plan.eth / 100} band={plan.band} value={v.eth} />
-              <Gauge label="Autres" now={share(v.alt, pos.crypto)} aim={Math.max(0, 1 - (plan.btc + plan.eth) / 100)} band={plan.band} value={v.alt} />
-            </ul>
-          </div>
-        )}
+      <h2 id="h-targets">Mon modèle</h2>
+      <div className="split-line">
+        <span className="split-bar" aria-hidden>
+          <span className="split-b" style={{ width: `${(1 - cNow) * 100}%` }} />
+          <span className="split-aim" style={{ left: `${(1 - m.cryptoTarget) * 100}%` }} />
+        </span>
+        <p className="num">
+          Bourse <b>{pct(1 - cNow)}</b> · Crypto <b>{pct(cNow)}</b>
+          <span className={Math.abs(cNow - m.cryptoTarget) > band ? "gauge-drift off" : "muted"}>
+            {" "}
+            pour {pct(1 - m.cryptoTarget)} / {pct(m.cryptoTarget)} visés
+          </span>
+        </p>
       </div>
+      <div className="scroll">
+        <table className="model num">
+          <thead>
+            <tr>
+              <th scope="col">Ligne</th>
+              <th scope="col" className="model-gauge">
+                <span className="sr">Aujourd'hui et cible</span>
+              </th>
+              <th scope="col">Aujourd'hui</th>
+              <th scope="col">Cible</th>
+              <th scope="col">Valeur</th>
+            </tr>
+          </thead>
+          {group("Bourse", false)}
+          {group("Crypto", true)}
+        </table>
+      </div>
+      <p className="muted strat-note">
+        Parts de tout ce qui est investi ; liquidités à part ({eur(m.waiting)}). Le hors modèle compte dans la bourse ou la crypto mais ne reçoit plus d'argent.
+      </p>
     </section>
+  );
+}
+
+function ModelRow({ r, now, band }: { r: Row; now: number; band: number }) {
+  const off = Math.abs(now - r.target) > band / 2 && Math.abs(now - r.target) * r.target > 0;
+  return (
+    <tr>
+      <th scope="row">
+        <span className="model-name">
+          <Coin asset={r.asset} cls={r.cls} size={22} />
+          <span className="clip">{r.name}</span>
+          {r.where && <span className="tag">{r.where}</span>}
+        </span>
+      </th>
+      <td className="model-gauge">
+        <Gauge now={now} aim={r.target} off={off} />
+      </td>
+      <td>{pct(now)}</td>
+      <td>
+        {pct(r.target)} <span className={off ? "gauge-drift off" : "gauge-drift"}>{drift(now, r.target)}</span>
+      </td>
+      <td className="muted">{eur(r.value)}</td>
+    </tr>
   );
 }
 
@@ -243,12 +289,10 @@ const parseEur = (s: string) => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
-function Next({ plan, pos }: { plan: Plan; pos: Position }) {
-  const suggested = Math.round(plan.monthly || pos.waiting || 500);
-  const [raw, setRaw] = useState(String(suggested));
+function Next({ m, raw, setRaw }: { m: Model; raw: string; setRaw: (v: string) => void }) {
   const amount = parseEur(raw);
-  const split = useMemo(() => nextSplit(pos, plan, amount), [pos, plan, amount]);
-  const parts = SLEEVES.filter((s) => split[s] > 0);
+  const split = useMemo(() => nextSplit(m, amount), [m, amount]);
+  const parts = m.rows.filter((r) => (split.get(r.id) ?? 0) > 0);
   return (
     <section className="strat-sec" aria-labelledby="h-next">
       <h2 id="h-next">Prochain apport</h2>
@@ -259,25 +303,28 @@ function Next({ plan, pos }: { plan: Plan; pos: Position }) {
             <input id="next-amount" type="text" inputMode="decimal" autoComplete="off" value={raw} onChange={(e) => setRaw(e.target.value)} />
             <span className="unit">€</span>
           </span>
-          {pos.waiting >= 1 && Math.round(pos.waiting) !== amount && (
-            <button type="button" className="link-btn" onClick={() => setRaw(String(Math.round(pos.waiting)))}>
-              Mes liquidités : {eur(pos.waiting)}
+          {m.waiting >= 1 && Math.round(m.waiting) !== amount && (
+            <button type="button" className="link-btn" onClick={() => setRaw(String(Math.round(m.waiting)))}>
+              Mes liquidités : {eur(m.waiting)}
             </button>
           )}
         </div>
         {amount > 0 && (
           <ul className="next-split" aria-live="polite">
-            {parts.map((s) => (
-              <li key={s}>
-                <span className={`sw s-${s}`} aria-hidden />
-                <span>{SLEEVE_NAME[s]}</span>
-                <span className="num">{eur(split[s])}</span>
+            {parts.map((r) => (
+              <li key={r.id}>
+                <Coin asset={r.asset} cls={r.cls} size={24} />
+                <span className="next-name">
+                  <span className="clip">{r.name}</span>
+                  {r.where && <span className="muted">{r.where}</span>}
+                </span>
+                <span className="num">{eur(split.get(r.id) ?? 0)}</span>
               </li>
             ))}
           </ul>
         )}
       </div>
-      <p className="muted strat-note">Sans rien vendre : ce qui est sous sa cible reçoit d'abord.</p>
+      <p className="muted strat-note">Sans rien vendre : les lignes sous leur cible reçoivent d'abord.</p>
     </section>
   );
 }
@@ -421,10 +468,10 @@ function Projection({ d }: { d: Data }) {
 
 // ---- risks
 
-function Crisis({ pos, total }: { pos: Position; total: number }) {
+function Crisis({ m, total }: { m: Model; total: number }) {
   const [key, setKey] = useState<(typeof CRISES)[number]["key"]>("crypto");
   const c = CRISES.find((x) => x.key === key)!;
-  const loss = crisisLoss(pos, c);
+  const loss = crisisLoss(m, c);
   return (
     <div className="stat">
       <h3>Test de crise</h3>
@@ -440,8 +487,8 @@ function Crisis({ pos, total }: { pos: Position; total: number }) {
   );
 }
 
-function Weight({ d, pos, go }: { d: Data; pos: Position; go: (path: string) => void }) {
-  const c = useMemo(() => concentration(d.pf, pos.invested), [d.pf, pos.invested]);
+function Weight({ d, m, go }: { d: Data; m: Model; go: (path: string) => void }) {
+  const c = useMemo(() => concentration(d.pf, m.invested), [d.pf, m.invested]);
   if (!c.top) return null;
   return (
     <div className="stat">
@@ -644,15 +691,14 @@ function Taxes({ d, rate, edit }: { d: Data; rate: number; edit: () => void }) {
 
 // ---- the year in short
 
-function Year({ d, pos }: { d: Data; pos: Position }) {
+function Year({ d, m }: { d: Data; m: Model }) {
   const ytd = d.ov.periods.find((p) => p.key === "YTD");
-  const months = d.st.months.filter((m) => m.m.startsWith(String(YEAR)));
-  const put = months.reduce((s, m) => s + m.in - m.out, 0);
-  const earned = months.reduce((s, m) => s + m.rewards + m.dividends + m.interest, 0);
-  const t = targets(d.plan);
-  const drift = pos.invested > 0 ? Math.abs(pos.crypto / pos.invested - (t.btc + t.eth + t.alt)) * 100 : 0;
-  const todo = [
-    { done: !d.plan.set || drift <= d.plan.band, text: d.plan.set ? (drift <= d.plan.band ? "Répartition dans la cible" : "Répartition à corriger") : "Fixer une cible" },
+  const months = d.st.months.filter((x) => x.m.startsWith(String(YEAR)));
+  const put = months.reduce((s, x) => s + x.in - x.out, 0);
+  const earned = months.reduce((s, x) => s + x.rewards + x.dividends + x.interest, 0);
+  const gap = m.invested > 0 ? Math.abs(m.crypto / m.invested - m.cryptoTarget) * 100 : 0;
+  const checks = [
+    { done: d.plan.set && gap <= d.plan.band, text: d.plan.set ? (gap <= d.plan.band ? "Crypto dans sa marge" : "Crypto hors de sa marge") : "Créer mon modèle" },
     { done: !!d.plan.pea, text: d.plan.pea ? "Date du PEA connue" : "Indiquer l'ouverture du PEA" },
     { done: d.tax.total.exempt, text: d.tax.total.exempt ? "Pas d'impôt crypto cette année" : `Déclarer la 2086 (≈ ${eur(d.tax.total.tax)})` },
     { done: false, text: "Déclarer les comptes à l'étranger" },
@@ -676,11 +722,11 @@ function Year({ d, pos }: { d: Data; pos: Position }) {
         </div>
         <div>
           <dt>Écart crypto</dt>
-          <dd>{d.plan.set ? `${drift.toFixed(0)} pts` : "—"}</dd>
+          <dd>{d.plan.set ? `${gap.toFixed(0)} pts` : "—"}</dd>
         </div>
       </dl>
       <ul className="todo">
-        {todo.map((x) => (
+        {checks.map((x) => (
           <li key={x.text} className={x.done ? "ok" : ""}>
             <span className="box" aria-hidden />
             {x.text}
@@ -691,4 +737,3 @@ function Year({ d, pos }: { d: Data; pos: Position }) {
     </section>
   );
 }
-

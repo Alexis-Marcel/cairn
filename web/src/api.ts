@@ -391,21 +391,30 @@ export interface AssetDetail {
   markers: { d: string; buy: boolean; qty: string; value: number; price: number }[];
 }
 
-/** GET and PUT /api/plan: the strategy. Shares are whole percents. */
+/** One asset of the model portfolio. */
+export interface PlanLine {
+  /** ISIN or symbol. */
+  id: string;
+  kind: "crypto" | "security";
+  /** A security's name, for one not held yet. */
+  name?: string;
+  /** Where it is bought: an account's id. */
+  account?: string;
+  /** Percent of everything invested (cash apart). */
+  share: number;
+}
+
+/** GET and PUT /api/plan: the strategy. */
 export interface Plan {
-  /** Saved once; otherwise these are the defaults. */
+  /** The model has lines. */
   set: boolean;
-  /** Of the invested whole (cash apart). */
-  crypto: number;
-  /** Of the crypto; the rest goes to the others. */
-  btc: number;
-  eth: number;
-  /** Of stocks and ETFs. */
-  etf: number;
-  /** Points crypto may drift before an alert. */
+  lines: PlanLine[];
+  /** Assets held outside the model that are to be sold. */
+  sell: string[];
+  /** Points crypto may drift from its target before an alert. */
   band: number;
-  /** The share one stock or small coin may reach. */
-  line: number;
+  /** The share one asset outside the model may reach. */
+  cap: number;
   monthly: number;
   /** YYYY-MM: the plan is followed from then. */
   since?: string;
