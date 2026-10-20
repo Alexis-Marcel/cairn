@@ -4,7 +4,7 @@
 import type { Op } from "../api";
 import { dayOf, eur, monthLong, num } from "../format";
 import { label } from "../assets";
-import { KIND, detail, moves } from "../ops";
+import { detail, moves, title } from "../ops";
 import { Coin } from "./Coin";
 
 /** sameAsset: every operation is about one asset (its page): its name is not repeated. */
@@ -30,7 +30,7 @@ export function OpList({ items, onOpen, sameAsset }: { items: Op[]; onOpen: (op:
                     <Coin asset={m.asset} size={40} />
                     <span className="op-main">
                       <span className="op-title-line">
-                        {op.type === "tax" ? "Impôt" : KIND[op.kind]}
+                        {title(op)}
                         {m.asset.kind !== "fiat" && !sameAsset && <span className="op-sym">{label(m.asset)}</span>}
                       </span>
                       <span className="op-sub">

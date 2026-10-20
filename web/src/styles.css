@@ -861,7 +861,8 @@ p {
   margin: 0 -10px;
   padding: 0;
 }
-.coin-list a {
+.coin-list a,
+.coin-list .static {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) 76px minmax(9.5em, auto);
   align-items: center;
@@ -1196,8 +1197,8 @@ p {
   font-size: 11px;
 }
 .split-key {
-  display: grid;
-  grid-template-columns: repeat(3, auto) 1fr;
+  display: flex;
+  flex-wrap: wrap;
   gap: 4px 22px;
   margin: 12px 0 0;
   font-size: var(--t-s);
@@ -1217,7 +1218,7 @@ p {
   font-weight: 560;
 }
 .split-key .split-when {
-  justify-self: end;
+  margin-left: auto;
   align-self: end;
   color: var(--faint);
   font-size: var(--t-xs);
@@ -1863,7 +1864,8 @@ td.left {
     padding-left: 16px;
     border-left: 1px solid var(--line);
   }
-  .coin-list a {
+  .coin-list a,
+  .coin-list .static {
     grid-template-columns: 40px minmax(0, 1fr) auto;
   }
   .coin-name {
@@ -1915,9 +1917,6 @@ td.left {
   .heat thead th:first-child,
   .heat tbody th {
     width: 2.6em;
-  }
-  .split-key {
-    grid-template-columns: repeat(3, auto);
   }
   .split-key .split-when {
     display: none;
@@ -2975,4 +2974,64 @@ details summary::marker {
     transform: translateY(24px);
     opacity: 0;
   }
+}
+
+/* Fundarr's corrections: a quiet line, its reason on demand. */
+.adjusted {
+  font-size: var(--t-xs);
+  color: var(--faint);
+  margin-top: 4px;
+}
+.adjusted summary {
+  list-style: none;
+  display: block;
+  color: var(--faint);
+  font-weight: 400;
+}
+.adjusted summary::-webkit-details-marker {
+  display: none;
+}
+.adjusted summary:hover,
+.adjusted[open] summary {
+  color: var(--muted);
+}
+.adjusted .info {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-left: 4px;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.adjusted p {
+  margin: 4px 0 0;
+  max-width: 44ch;
+  color: var(--muted);
+  line-height: 1.45;
+}
+.figures .adjusted {
+  margin-top: 2px;
+  font-size: var(--t-xs);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.chart-note.sub {
+  margin-top: 2px;
+  font-size: var(--t-xs);
+  color: var(--faint);
+  min-height: 0;
+}
+.bars .adj {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1.4;
+}
+.bars .bar.on .adj {
+  stroke: var(--ink);
+}
+.nowrap {
+  white-space: nowrap;
 }

@@ -41,7 +41,7 @@ export function Assets({ rev, go, scope, onScope }: { rev: number; go: (path: st
   const all = useMemo(() => st.data?.assets ?? [], [st.data]);
   const long = all.length >= LONG;
 
-  const { held, sold } = useMemo(() => {
+  const { held, sold, cash } = useMemo(() => {
     const words = fold(q).split(/\s+/).filter(Boolean);
     const hit = (c: CoinStat) => {
       if (!words.length) return true;
@@ -49,8 +49,9 @@ export function Assets({ rev, go, scope, onScope }: { rev: number; go: (path: st
       return words.every((w) => text.includes(w));
     };
     const list = all.filter(hit);
-    return { held: sorted(list.filter((c) => c.held), by), sold: sorted(list.filter((c) => !c.held), by) };
-  }, [all, q, by]);
+    const cash = (st.data?.cash ?? []).filter((c) => !words.length || words.every((w) => fold("liquidites especes " + c.account.name).includes(w)));
+    return { held: sorted(list.filter((c) => c.held), by), sold: sorted(list.filter((c) => !c.held), by), cash };
+  }, [all, q, by, st.data]);
 
   return (
     <div className="assets-page">
@@ -84,11 +85,17 @@ export function Assets({ rev, go, scope, onScope }: { rev: number; go: (path: st
         <Failed error={st.error} retry={st.reload} />
       ) : !st.data ? (
         <SkelRows rows={5} />
-      ) : held.length + sold.length === 0 ? (
+      ) : held.length + sold.length + cash.length === 0 ? (
         <p className="empty">{q ? "Aucun actif ne correspond." : "Aucun actif."}</p>
       ) : (
         <div className={st.loading ? "stale" : ""}>
           {held.length > 0 && <CoinList coins={held} go={go} />}
+          {cash.length > 0 && (
+            <section aria-labelledby="h-cash" className="sold">
+              <h2 id="h-cash">Liquidités</h2>
+              <CoinList coins={[]} cash={cash} byAccount go={go} />
+            </section>
+          )}
           {sold.length > 0 && (
             <section aria-labelledby="h-sold" className="sold">
               <h2 id="h-sold">Plus détenus</h2>
