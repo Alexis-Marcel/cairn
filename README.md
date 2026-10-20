@@ -1,12 +1,14 @@
 # Cairn
 
-Where my crypto stands: total value, what I put in, what it became, and the lines of the French 2086 tax form. A small, opinionated personal app, crypto only for now: you give it your operations, it does the rest.
+Where my crypto stands: what it is worth, what I put in, what it became, and how. A small, opinionated personal app, crypto only for now: you give it your operations, it does the rest.
 
 ![Accueil](docs/screenshots/accueil-clair.png)
 
-- **Accueil**: value, invested, gain; value against invested over time (1M, 1A, Tout); allocation by asset or account; each asset; this month's money in and rewards.
-- **Opérations**: every operation, by account or asset, searchable. Add, change or remove those entered by hand or imported.
-- **Impôts**: one year of disposals as 2086 lines, totals, estimated tax, a CSV to copy into the form. Rewards can be counted as already taxed income.
+- **Accueil**: the value and its change over 7J, 1M, YTD, 1A or Tout; a chart to scrub with a finger (value against money put in, or performance time-weighted so deposits are not gains); gain, yearly return (money-weighted), net contributions, rewards, fees; each coin with its month; allocation by coin or account, stablecoins apart.
+- **Statistiques** (on Accueil): monthly returns year by year, money put in each month, cumulative rewards, what came from contributions, rewards and the market, gain by coin.
+- **Actifs**: every coin, held or sold. One page each: its price with my average cost and my buys and sales, the quantity held, unrealized and realized gain, rewards, fees, its operations.
+- **Activité**: every operation by month, by account or coin, searchable. Add, change or remove those entered by hand or imported.
+- **Impôts** (a card on Accueil when a declaration has something, and in the footer): one year of disposals as 2086 lines, totals, estimated tax, a CSV to copy into the form.
 
 One Go binary serves the UI, keeps everything in SQLite (`/data/cairn.db`) and computes the portfolio itself, with [Fundarr](https://github.com/Alexis-Marcel/fundarr)'s engine as a library (average cost per account, transfers carrying their cost, the 2086 method). Daily prices come from Binance and OKX public market data and the ECB's rates (through Frankfurter): no key, no account, each day asked once and kept.
 
@@ -25,7 +27,7 @@ or see [`compose.yaml`](compose.yaml), then open http://localhost:8080. With a b
 Cairn opens on an empty Accueil that offers all three; they mix freely.
 
 1. **By hand**: Ajouter. Achat, vente, échange, dépôt, retrait, récompense, transfert entre comptes, frais. A date, an account (or a new one), a coin, a quantity; the price of a purchase or a sale is filled in from the day's close.
-2. **A CSV file**: Opérations → Importer un CSV. Each row is checked and shown before anything is added; importing the same file again adds nothing.
+2. **A CSV file**: Activité → Importer. Each row is checked and shown before anything is added; importing the same file again adds nothing.
 3. **Fundarr** (optional): Réglages → Synchroniser avec Fundarr. Cairn keeps a copy of Fundarr's history through its [changes feed](https://github.com/Alexis-Marcel/fundarr/blob/main/docs/api.md#get-apiv1changes), every 15 minutes, one account per Fundarr source. Those operations are read-only in Cairn: change them in Fundarr.
 
 ### Fundarr
@@ -86,9 +88,11 @@ cd web && npm install && npm run dev                               # http://loca
 
 | | |
 |---|---|
-| ![Opérations](docs/screenshots/operations-clair.png) | ![Ajouter](docs/screenshots/ajouter-clair.png) |
-| ![Accueil, sombre](docs/screenshots/accueil-sombre.png) | ![Mobile](docs/screenshots/operations-mobile-sombre.png) |
-| ![Premier lancement](docs/screenshots/bienvenue-clair.png) | ![Impôts](docs/screenshots/impots-clair.png) |
+| ![Statistiques](docs/screenshots/statistiques-clair.png) | ![Un actif](docs/screenshots/actif-clair.png) |
+| ![Accueil, sombre](docs/screenshots/accueil-sombre.png) | ![Activité](docs/screenshots/activite-clair.png) |
+| ![Accueil, mobile](docs/screenshots/accueil-mobile-sombre.png) | ![Un actif, mobile](docs/screenshots/actif-mobile-sombre.png) |
+| ![Ajouter](docs/screenshots/ajouter-clair.png) | ![Impôts](docs/screenshots/impots-clair.png) |
+| ![Premier lancement](docs/screenshots/bienvenue-clair.png) | ![Activité, mobile](docs/screenshots/activite-mobile-sombre.png) |
 
 ## Credits
 
