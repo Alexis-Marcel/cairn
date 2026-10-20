@@ -4,10 +4,11 @@ Where my investments stand, crypto, stocks and ETFs: what they are worth, what I
 
 ![Accueil](docs/screenshots/accueil-clair.png)
 
+- **Tout, Crypto, Bourse**: one switch above the value (shown when there are both) narrows every figure, chart, list and the activity to crypto alone or to stocks and ETFs alone, and stays on from page to page. Each side is counted as a portfolio of its own: money taken out of crypto by a sale and put into an ETF by a buy is a withdrawal from Crypto and a contribution to Bourse (Tout sees euros leave and come back). Cash-only operations (interest, account fees) go with the class their account trades most; the two sides add up to Tout.
 - **Accueil**: the value and its change over 7J, 1M, YTD, 1A or Tout, in euros and as a share of what was at stake (the opening value plus money put in since); a chart to scrub with a finger (value against money put in, or performance time-weighted so deposits are not gains); gain, yearly return (money-weighted), net contributions, income (staking, dividends, interest), fees; each asset with its month; allocation by asset, by class (crypto, ETF, stocks, stablecoins) or by account.
 - **Statistiques** (on Accueil): monthly returns year by year, money put in each month, cumulative income, what came from contributions, income and the market, gain by asset.
-- **Actifs**: every coin, stock and ETF, held or sold, by name (a security's ISIN is a detail on its page). One page each: its price with my average cost and my buys and sales, the quantity held, unrealized and realized gain, rewards or dividends, fees, its operations.
-- **Activité**: every operation by month, by account or asset, searchable by name. Add, change or remove those entered by hand or imported.
+- **Actifs**: every coin, stock and ETF, held or sold, by name (a security's ISIN is a detail on its page); a long list can be searched and sorted by value, gain or name. One page each: its price with my average cost and my buys and sales, the quantity held, unrealized and realized gain, rewards or dividends, fees, its operations.
+- **Activité**: every operation by month, by account or asset, searchable by name, loading as you scroll. Add (**N** on a keyboard; from an asset's page, for that asset), change or remove those entered by hand or imported.
 - **Impôts** (a card on Accueil when a declaration has something, and in the footer): one year of crypto disposals as 2086 lines, totals, estimated tax, a CSV to copy into the form. Stocks and ETFs are left out.
 
 **How the figures count.** Cash is not part of the value: euros sitting on an account (Trade Republic's, an exchange's) are outside the portfolio, so a bank transfer in, a card payment or a cash withdrawal changes nothing; money counts as put in when it buys something and as taken out when a sale brings it back. Dividends, net of the tax withheld, come back out the same way, so they are part of the gain, the yearly return and the time-weighted performance. Interest on cash is income too, shown with the rest, but outside the gain (the cash that earns it is not in the value). A broker's accounts from Fundarr stay apart (Trade Republic CTO and PEA).
@@ -77,7 +78,7 @@ date,type,actif,quantite,prix,frais,recu,quantite_recue,compte,note,isin,nom
 | `FUNDARR_TOKEN` | | Fundarr read token (`fdr_…`), with `FUNDARR_URL` |
 | `FUNDARR_NOTIFY_SECRET` | | the notify secret, instead of pasting it in Réglages |
 
-`/healthz` answers `ok`. Writes under `/api` must be JSON sent by Cairn's own page (cross-origin protection); errors come back as `{"error": "…"}`. An earlier Cairn's link (`/data/cairn.json`) is moved into the database on first start.
+The computed reads (`/api/overview`, `/api/stats`, `/api/portfolio`, `/api/portfolio/history`) and `/api/operations` take `?scope=all|crypto|securities`. `/healthz` answers `ok`. Writes under `/api` must be JSON sent by Cairn's own page (cross-origin protection); errors come back as `{"error": "…"}`. An earlier Cairn's link (`/data/cairn.json`) is moved into the database on first start.
 
 ## Develop
 
@@ -94,8 +95,8 @@ cd web && npm install && npm run dev                               # http://loca
 | | |
 |---|---|
 | ![Statistiques](docs/screenshots/statistiques-clair.png) | ![Un actif](docs/screenshots/actif-clair.png) |
-| ![Accueil, sombre](docs/screenshots/accueil-sombre.png) | ![Activité](docs/screenshots/activite-clair.png) |
-| ![Accueil, mobile](docs/screenshots/accueil-mobile-sombre.png) | ![Un actif, mobile](docs/screenshots/actif-mobile-sombre.png) |
+| ![Accueil, Bourse, sombre](docs/screenshots/accueil-sombre.png) | ![Activité](docs/screenshots/activite-clair.png) |
+| ![Accueil, Crypto, mobile](docs/screenshots/accueil-mobile-sombre.png) | ![Un actif, mobile](docs/screenshots/actif-mobile-sombre.png) |
 | ![Ajouter](docs/screenshots/ajouter-clair.png) | ![Impôts](docs/screenshots/impots-clair.png) |
 | ![Premier lancement](docs/screenshots/bienvenue-clair.png) | ![Activité, mobile](docs/screenshots/activite-mobile-sombre.png) |
 
