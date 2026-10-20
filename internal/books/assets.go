@@ -21,8 +21,9 @@ const (
 
 var isinRe = regexp.MustCompile(`^[A-Z]{2}[A-Z0-9]{9}[0-9]$`)
 
-// Words that name a fund, not a company.
-var fundRe = regexp.MustCompile(`(?i)\b(etf|etc|etn|ucits|ishares|amundi|lyxor|xtrackers|vanguard|spdr|invesco|wisdomtree|vaneck|ossiam|bnp paribas easy|hsbc msci|ubs etf|franklin ftse|msci|s&p ?500|stoxx|ftse|nasdaq[- ]?100|index|fund|fonds|sicav)\b`)
+// Words that name a fund, not a company; Trade Republic ends a fund's name
+// with its share class: "Core CAC 40 EUR (Acc)".
+var fundRe = regexp.MustCompile(`(?i)\b(etf|etc|etn|ucits|ishares|amundi|lyxor|xtrackers|vanguard|spdr|invesco|wisdomtree|vaneck|ossiam|bnp paribas easy|hsbc msci|ubs etf|franklin ftse|msci|s&p ?500|stoxx|ftse|nasdaq[- ]?100|cac ?40|dax|index|fund|fonds|sicav)\b|\((acc|dist)\)`)
 
 // Class of an asset. Stocks and ETFs are told apart by their name (Fundarr
 // does not say); without one, an Irish or Luxembourg ISIN is a fund.
