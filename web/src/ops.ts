@@ -15,8 +15,46 @@ export const KIND: Record<Kind, string> = {
   interest: "Intérêts",
   transfer: "Transfert",
   fee: "Frais",
-  correction: "Correction",
+  correction: "Ajustement",
 };
+
+/** What Fundarr's adjustments are, in a sentence. */
+export const ADJUST_WHY = "Fundarr corrige un historique incomplet. Importer le relevé de la plateforme les remplace.";
+
+// Fundarr's notes on its corrections, in French.
+const NOTES: Record<string, string> = {
+  "held on the platform but missing from its history": "Détenu sur la plateforme, absent de son historique",
+  "in the history but no longer held on the platform": "Dans l'historique, plus détenu sur la plateforme",
+  "missing from the platform's history: it shows more leaving than ever arrived": "Absent de l'historique : il en sort plus qu'il n'en est arrivé",
+};
+
+/** A note as shown: Fundarr's own in French. */
+export const noteOf = (n: string) => NOTES[n] ?? n;
+
+/**
+ * What an operation is called in a list: its kind, or more exactly when the
+ * kind says too little (coins sent outside, a card payment).
+ */
+export function title(op: Op): string {
+  if (op.type === "tax") return "Impôt";
+  const fiat = op.base.asset.kind === "fiat";
+  const note = (op.note ?? "").toLowerCase();
+  switch (op.kind) {
+    case "deposit":
+      if (!fiat) return "Reçu de l'extérieur";
+      if (note.startsWith("card refund")) return "Remboursement carte";
+      break;
+    case "withdrawal":
+      if (!fiat) return "Envoi externe";
+      if (note.startsWith("cash withdrawal")) return "Retrait d'espèces";
+      if (note.startsWith("card")) return "Paiement par carte";
+      break;
+    case "fee":
+      if (fiat && note.startsWith("card")) return "Frais de carte";
+      break;
+  }
+  return KIND[op.kind];
+}
 
 /** The kinds the form offers, in its order. */
 export const FORM_KINDS: Exclude<Kind, "correction">[] = ["buy", "sell", "swap", "reward", "dividend", "transfer", "deposit", "withdrawal", "fee"];

@@ -1,6 +1,6 @@
 // Where the value comes from, month after month: the money put in at the
-// bottom, then the rewards received, then what the market added (moss) or
-// took (garnet). The top edge is the value.
+// bottom (with Fundarr's corrections), then the income received, then what
+// the market added (moss) or took (garnet). The top edge is the value.
 
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { eur, eurShort, monthLong } from "../format";
@@ -10,6 +10,7 @@ export interface SplitPoint {
   m: string;
   value: number;
   invested: number;
+  adjusted: number;
   earned: number;
 }
 
@@ -95,8 +96,17 @@ export function SplitArea({ points }: { points: SplitPoint[] }) {
               <i className="sw invested" />
               Apports
             </dt>
-            <dd>{eur(p.invested)}</dd>
+            <dd>{eur(p.invested - p.adjusted)}</dd>
           </div>
+          {Math.abs(p.adjusted) >= 0.5 && (
+            <div title="Corrections de Fundarr : ni apport ni gain">
+              <dt>
+                <i className="sw invested" />
+                Ajustements
+              </dt>
+              <dd>{eur(p.adjusted, { sign: true })}</dd>
+            </div>
+          )}
           <div>
             <dt>
               <i className="sw earned" />

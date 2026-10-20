@@ -66,7 +66,11 @@ export interface Portfolio {
     unrealized: string;
     realized: string;
     rewards: string;
+    /** Cash on the accounts, part of the value. */
+    cash: string;
   };
+  /** Each account's cash, by currency. */
+  cash: (SourceRef & { asset: Asset; qty: string; value: string })[];
   assets: {
     asset: Asset;
     qty: string;
@@ -294,6 +298,7 @@ export interface Overview {
   periods: { key: PeriodKey; from: number; start: number; end: number; gain: number; pct: number | null; twr: number }[];
   total: {
     value: number;
+    /** Every external flow, the adjustments among them: what the gain is measured against. */
     invested: number;
     gain: number;
     realized: number;
@@ -301,11 +306,19 @@ export interface Overview {
     rewards: number;
     /** Paid by securities, net of tax; part of the gain. */
     dividends: number;
-    /** On cash, outside the value and the gain. */
+    /** On cash; part of the gain. */
     interest: number;
     fees: number;
     stable: number;
     xirr: number | null;
+    /** Money put in and taken out from outside, and the net. */
+    paidIn: number;
+    paidOut: number;
+    contributed: number;
+    /** Fundarr's balance corrections: neither money put in nor gains. */
+    adjusted: number;
+    /** Cash on the accounts (Liquidités). */
+    cash: number;
   };
   /** The value by class of asset. */
   classes: Partial<Record<AssetClass, number>>;
@@ -343,16 +356,30 @@ export interface Stats {
   months: {
     m: string;
     ret: number;
+    /** Money put in and taken out; adj: Fundarr's corrections (signed). */
     in: number;
     out: number;
+    adj: number;
     rewards: number;
     dividends: number;
     interest: number;
     value: number;
+    /** Every external flow so far; adjusted: the corrections among it. */
     invested: number;
+    adjusted: number;
     earned: number;
   }[];
   assets: CoinStat[];
+  /** Cash by account, largest first. */
+  cash: CashStat[];
+}
+
+/** An account's cash. share: of the value. */
+export interface CashStat {
+  account: SourceRef;
+  value: number;
+  share: number;
+  held: { symbol: string; qty: string }[];
 }
 
 /** GET /api/assets/{symbol}: one coin day by day. */

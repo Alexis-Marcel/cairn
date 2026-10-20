@@ -3,7 +3,8 @@
 // then the statistics.
 
 import { useMemo, useState } from "react";
-import { get, useLoad, type CoinStat, type Overview, type PeriodKey, type Portfolio, type Scope, type Stats, type TaxFR } from "../api";
+import { get, useLoad, type CashStat, type CoinStat, type Overview, type PeriodKey, type Portfolio, type Scope, type Stats, type TaxFR } from "../api";
+import { Adjusted } from "../components/Adjusted";
 import { Allocation } from "../components/Allocation";
 import { Coin } from "../components/Coin";
 import { Heatmap } from "../components/Heatmap";
@@ -130,6 +131,8 @@ export function Home({ rev, go, scope, onScope }: { rev: number; go: (path: stri
   const twr = at ? at.x / (open.x || 1) - 1 : per.twr;
   const pctOf = at ? simple(open, at) : per.pct;
 
+  const adjusted = Math.abs(o.total.adjusted) >= 0.5;
+
   const changePeriod = (v: PeriodKey) => {
     setPeriod(v);
     setScrub(null);
@@ -240,7 +243,9 @@ export function Home({ rev, go, scope, onScope }: { rev: number; go: (path: stri
           <dd className={tone(o.total.gain)}>
             <Num value={o.total.gain} format={(v) => eur(v, { sign: true })} />
           </dd>
-          <dd className="figure-sub">{o.total.invested > 0 && pct(o.total.gain / o.total.invested, { sign: true }) + " des apports"}</dd>
+          <dd className="figure-sub">
+            {o.total.invested > 0 && pct(o.total.gain / o.total.invested, { sign: true }) + (adjusted ? " du capital investi" : " des apports")}
+          </dd>
         </div>
         <div>
           <dt>Rendement annuel</dt>
@@ -252,9 +257,14 @@ export function Home({ rev, go, scope, onScope }: { rev: number; go: (path: stri
         <div>
           <dt>Apports nets</dt>
           <dd>
-            <Num value={o.total.invested} format={(v) => eur(v)} />
+            <Num value={o.total.contributed} format={(v) => eur(v)} />
           </dd>
           <dd className="figure-sub">versés moins retirés</dd>
+          {adjusted && (
+            <dd>
+              <Adjusted amount={o.total.adjusted} />
+            </dd>
+          )}
         </div>
         <div>
           <dt>Revenus</dt>
@@ -268,7 +278,7 @@ export function Home({ rev, go, scope, onScope }: { rev: number; go: (path: stri
           <dd>
             <Num value={o.total.fees} format={(v) => eur(v)} />
           </dd>
-          <dd className="figure-sub">{o.total.invested > 0 && pct(o.total.fees / o.total.invested) + " des apports"}</dd>
+          <dd className="figure-sub">{o.total.contributed > 0 && pct(o.total.fees / o.total.contributed) + " des apports"}</dd>
         </div>
       </dl>
 
@@ -288,7 +298,7 @@ export function Home({ rev, go, scope, onScope }: { rev: number; go: (path: stri
             </a>
           </div>
           {st.data ? (
-            <CoinList coins={st.data.assets.filter((c) => c.held).slice(0, 6)} go={go} />
+            <CoinList coins={st.data.assets.filter((c) => c.held).slice(0, 6)} cash={st.data.cash} go={go} />
           ) : st.error ? (
             <Failed error={st.error} retry={st.reload} />
           ) : (
@@ -320,7 +330,10 @@ export function Home({ rev, go, scope, onScope }: { rev: number; go: (path: stri
                 <Allocation
                   parts={
                     by === "assets"
-                      ? pf.data.assets.map((a) => ({ key: a.id, label: label(a.asset), value: Number(a.value) }))
+                      ? [
+                          ...pf.data.assets.map((a) => ({ key: a.id, label: label(a.asset), value: Number(a.value) })),
+                          { key: "_cash", label: "Liquidités", value: Number(pf.data.total.cash) },
+                        ]
                       : by === "classes"
                         ? Object.entries(o.classes).map(([k, v]) => ({ key: k, label: CLASS[k as keyof typeof CLASS], value: v ?? 0 }))
                         : pf.data.sources.map((s) => ({ key: s.id, label: s.name, value: Number(s.value) }))
@@ -372,14 +385,49 @@ export function Home({ rev, go, scope, onScope }: { rev: number; go: (path: stri
   );
 }
 
-/** Coins as rows: icon, name and quantity, a month of price, value and gain. */
-export function CoinList({ coins, go }: { coins: CoinStat[]; go: (path: string) => void }) {
-  if (!coins.length) return <p className="empty">Aucun actif.</p>;
+/** Cash held, as a row: one for all accounts, or the account's. */
+function CashRow({ list, name }: { list: CashStat[]; name?: string }) {
+  const value = list.reduce((s, c) => s + c.value, 0);
+  const share = list.reduce((s, c) => s + c.share, 0);
+  const foreign = list.flatMap((c) => c.held).filter((h) => h.symbol !== "EUR");
+  const sub = name
+    ? [foreign.length ? list[0].held.map((h) => (h.symbol === "EUR" ? eur(h.qty) : `${qty(h.qty)} ${h.symbol}`)).join(", ") : "Euros", pct(share)]
+    : [list.length > 1 ? `${list.length} comptes` : list[0].account.name, pct(share)];
+  return (
+    <li>
+      <div className="static">
+        <Coin symbol="EUR" size={40} />
+        <span className="coin-main">
+          <span className="coin-name">{name ?? "Liquidités"}</span>
+          <span className="coin-sub num">{sub.join(" · ")}</span>
+        </span>
+        <span className="coin-spark" />
+        <span className="coin-num num">
+          <span className="coin-value">{eur(value)}</span>
+          {!name && <span className="coin-gain muted">{list.length > 1 ? "sur les comptes" : "Liquidités"}</span>}
+        </span>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * Coins as rows: icon, name and quantity, a month of price, value and gain.
+ * cash: the accounts' cash, in one row among them by value, or one per
+ * account (byAccount) after them.
+ */
+export function CoinList({ coins, cash = [], byAccount, go }: { coins: CoinStat[]; cash?: CashStat[]; byAccount?: boolean; go: (path: string) => void }) {
+  const cashValue = cash.reduce((s, c) => s + c.value, 0);
+  const oneRow = !byAccount && cash.length > 0 && cashValue >= 0.5;
+  if (!coins.length && !oneRow && !(byAccount && cash.length)) return byAccount ? null : <p className="empty">Aucun actif.</p>;
+  const at = oneRow ? coins.findIndex((c) => !c.held || c.value < cashValue) : -1;
+  const cashAt = at < 0 ? coins.length : at;
   return (
     <ul className="coin-list">
-      {coins.map((c) => {
+      {byAccount && cash.map((c) => <CashRow key={c.account.id} list={[c]} name={c.account.name} />)}
+      {coins.map((c, n) => {
         const g = c.held ? c.unrealized : c.gain;
-        return (
+        const row = (
           <li key={c.id}>
             <a
               href={"/actifs/" + c.id}
@@ -411,7 +459,9 @@ export function CoinList({ coins, go }: { coins: CoinStat[]; go: (path: string) 
             </a>
           </li>
         );
+        return n === cashAt && oneRow ? [<CashRow key="_cash" list={cash} />, row] : row;
       })}
+      {oneRow && cashAt === coins.length && <CashRow list={cash} />}
     </ul>
   );
 }

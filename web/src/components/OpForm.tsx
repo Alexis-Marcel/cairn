@@ -6,7 +6,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { get, message, send, type Account, type AssetRef, type Entry, type Kind, type Op } from "../api";
 import { ISIN, assetId, label, validISIN } from "../assets";
 import { date as longDate, eur, num } from "../format";
-import { FORM_KINDS, KIND, ORIGIN, amount, detail, moves, swapLegs } from "../ops";
+import { ADJUST_WHY, FORM_KINDS, KIND, ORIGIN, amount, detail, moves, noteOf, swapLegs, title } from "../ops";
 import { Coin } from "./Coin";
 import { AccountPicker, AssetPicker, type AccountChoice } from "./Pickers";
 
@@ -402,7 +402,7 @@ export function OpDetails({ op, onClose }: { op: Op; onClose: () => void }) {
     if (op.fee) r.push(["Frais", amount(op.fee.qty, op.fee.asset)]);
     const isin = (op.kind === "dividend" ? op.quote?.asset : op.base.asset)?.isin;
     if (isin) r.push(["ISIN", isin]);
-    if (op.note) r.push(["Note", op.note]);
+    if (op.note) r.push(["Note", noteOf(op.note)]);
     return r;
   }, [op, m]);
   return (
@@ -410,7 +410,7 @@ export function OpDetails({ op, onClose }: { op: Op; onClose: () => void }) {
       <p className="op-title">
         <Coin asset={m.asset} />
         <span>
-          {KIND[op.kind]} {m.asset.kind === "security" && label(m.asset)} <span className={`badge ${op.origin}`}>{ORIGIN[op.origin]}</span>
+          {title(op)} {m.asset.kind === "security" && label(m.asset)} <span className={`badge ${op.origin}`}>{ORIGIN[op.origin]}</span>
         </span>
       </p>
       <dl>
@@ -421,7 +421,7 @@ export function OpDetails({ op, onClose }: { op: Op; onClose: () => void }) {
           </div>
         ))}
       </dl>
-      <p className="muted note">Elle vient de Fundarr : modifie-la dans Fundarr.</p>
+      <p className="muted note">{op.kind === "correction" ? ADJUST_WHY : "Elle vient de Fundarr : modifie-la dans Fundarr."}</p>
       <div className="actions">
         <button type="button" className="btn" onClick={onClose}>
           Fermer
