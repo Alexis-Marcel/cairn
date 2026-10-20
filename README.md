@@ -30,7 +30,7 @@ Cairn opens on an empty Accueil that offers all three; they mix freely.
 
 ### Fundarr
 
-In Fundarr, **Apps → Add app → Cairn** gives a token. In Cairn, Réglages: paste Fundarr's address as Cairn reaches it (`http://fundarr:9494`) and the token. Cairn tries them, then copies the history. **Délier** asks whether to keep the copied operations (they become editable) or remove them.
+In Fundarr, **Apps → Add app → Cairn** gives a token. In Cairn, Réglages: paste the token; the address fills in by itself when Fundarr runs next to Cairn (`http://fundarr:9494` on a shared Docker network). Use that internal address rather than a public one, which a proxy may block. Cairn tries them, then copies the history. **Délier** asks whether to keep the copied operations (they become editable) or remove them.
 
 To be told of changes instead of waiting for the next 15 minutes: Réglages → *Être prévenu par Fundarr* shows Cairn's notify address (`https://cairn.example/api/fundarr/notify`). Give it to Fundarr (**Apps → Cairn → Notify**), then paste the secret Fundarr shows once into Cairn. Fundarr signs each call with it (`Fundarr-Signature`, HMAC-SHA256 of `<t>.<body>`, checked to be recent); without a secret the route answers 404.
 
