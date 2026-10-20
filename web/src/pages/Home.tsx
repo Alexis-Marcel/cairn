@@ -11,6 +11,7 @@ import { Heatmap } from "../components/Heatmap";
 import { LineChart } from "../components/LineChart";
 import { MonthBars } from "../components/MonthBars";
 import { Num, useTween } from "../components/Num";
+import { Outlook } from "../components/PlanCards";
 import { Ranking } from "../components/Ranking";
 import { ScopeSwitch } from "../components/ScopeSwitch";
 import { Segmented } from "../components/Segmented";
@@ -374,6 +375,7 @@ export function Home({ rev, go, scope, onScope }: { rev: number; go: (path: stri
       </div>
 
       {st.data && <StatsSection stats={st.data} go={go} />}
+      {scope === "all" && <Outlook rev={rev} go={go} />}
 
       <footer className="foot">
         <span>
