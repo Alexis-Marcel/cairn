@@ -1,8 +1,8 @@
 // The address and token of a Fundarr. Cairn tries them before keeping them,
 // then copies the history once.
 
-import { useId, useState } from "react";
-import { message, send, type SyncState } from "../api";
+import { useEffect, useId, useRef, useState } from "react";
+import { get, message, send, type SyncState } from "../api";
 
 export function LinkForm({
   url: initial = "",
@@ -18,6 +18,24 @@ export function LinkForm({
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [found, setFound] = useState(false);
+  const tokenRef = useRef<HTMLInputElement>(null);
+  const typed = useRef(false);
+
+  // A Fundarr on the same server fills in its own address.
+  useEffect(() => {
+    if (initial) return;
+    const ctl = new AbortController();
+    get<{ url: string }>("sync/find", ctl.signal)
+      .then((r) => {
+        if (!r.url || typed.current) return;
+        setUrl(r.url);
+        setFound(true);
+        tokenRef.current?.focus();
+      })
+      .catch(() => {});
+    return () => ctl.abort();
+  }, [initial]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,13 +65,19 @@ export function LinkForm({
           required
           autoFocus={!initial}
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(e) => {
+            typed.current = true;
+            setUrl(e.target.value);
+            setFound(false);
+          }}
         />
+        {found && <small className="muted">Fundarr trouvé sur ce serveur.</small>}
       </label>
       <div className="field">
         <label htmlFor={id + "-token"}>Jeton</label>
         <input
           id={id + "-token"}
+          ref={tokenRef}
           type="password"
           name="token"
           placeholder="fdr_…"

@@ -186,6 +186,11 @@ func (s *Server) syncFor(r *http.Request, d time.Duration) {
 	}
 }
 
+// findFundarr looks for a Fundarr next to Cairn, to fill in its address.
+func (s *Server) findFundarr(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, map[string]string{"url": fundarr.Find(r.Context(), fundarr.Nearby)})
+}
+
 func (s *Server) link(w http.ResponseWriter, r *http.Request) {
 	if s.FromEnv {
 		writeErr(w, http.StatusConflict, "Réglé par FUNDARR_URL et FUNDARR_TOKEN")
