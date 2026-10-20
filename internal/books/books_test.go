@@ -42,3 +42,18 @@ func TestFrench(t *testing.T) {
 		t.Fatal("unknown notes stay")
 	}
 }
+
+func TestClassFunds(t *testing.T) {
+	for name, want := range map[string]string{
+		"Core CAC 40 EUR (Acc)": ClassETF,
+		"S&P 500 EUR (Acc)":     ClassETF,
+		"MSCI World (Dist)":     ClassETF,
+		"Alphabet (A)":          ClassStock,
+		"TotalEnergies":         ClassStock,
+		"Daxor":                 ClassStock,
+	} {
+		if got := Class(model.Asset{Kind: model.Security, Symbol: "FR0013380607", Name: name}); got != want {
+			t.Errorf("%s: %s, want %s", name, got, want)
+		}
+	}
+}

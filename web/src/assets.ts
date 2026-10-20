@@ -74,7 +74,7 @@ export function validISIN(s: string): boolean {
 
 // Words that name a fund, not a company (as the server's books.Class).
 const FUND =
-  /\b(etf|etc|etn|ucits|ishares|amundi|lyxor|xtrackers|vanguard|spdr|invesco|wisdomtree|vaneck|ossiam|bnp paribas easy|hsbc msci|ubs etf|franklin ftse|msci|s&p ?500|stoxx|ftse|nasdaq[- ]?100|index|fund|fonds|sicav)\b/i;
+  /\b(etf|etc|etn|ucits|ishares|amundi|lyxor|xtrackers|vanguard|spdr|invesco|wisdomtree|vaneck|ossiam|bnp paribas easy|hsbc msci|ubs etf|franklin ftse|msci|s&p ?500|stoxx|ftse|nasdaq[- ]?100|cac ?40|dax|index|fund|fonds|sicav)\b|\((acc|dist)\)/i;
 
 /** A security's class when the server did not say: by its name, else its ISIN. */
 export function securityClass(a: Pick<Asset, "symbol" | "name" | "isin">): "stock" | "etf" {
