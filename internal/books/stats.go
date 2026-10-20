@@ -53,23 +53,25 @@ func (e *Engine) series(l *Ledger, p *pricer, scope string) *series {
 	}
 	today := now.Truncate(dayLen)
 	s := &series{version: l.Version, at: now, step: "day"}
+	m := p.money(l)
 	start := portfolio.First(l.Acts)
+	if f := m.First(scope); !f.IsZero() && (start.IsZero() || f.Before(start)) {
+		start = f
+	}
 	if !start.IsZero() && !start.After(today) {
 		days := portfolio.Days(start, today, "day")
 		if days == nil {
 			s.step = "week"
 			days = portfolio.Days(start, today, "week")
 		}
+		// The coins and securities held, and the cash beside them; the
+		// money invested is every external flow.
 		points, _ := portfolio.History(l.Acts, l.Pairs, p.memoize, days)
-		// Dividends leave for cash, as a sale's euros do: the money still
-		// invested is what went in less what came back.
-		divs := paidOut(l.Acts, p.memoize)
-		paid, n := decimal.Zero, 0
-		for _, pt := range points {
-			for ; n < len(divs) && divs[n].T.Before(pt.Day.Add(dayLen)); n++ {
-				paid = paid.Add(divs[n].V)
-			}
-			s.days = append(s.days, perf.Day{T: pt.Day, Value: f64(pt.Value), Invested: f64(pt.Invested.Sub(paid)), PaidOut: f64(paid)})
+		cash := m.Days(scope, p.memoize, days)
+		for n, pt := range points {
+			c := cash[n]
+			s.days = append(s.days, perf.Day{T: pt.Day, Value: f64(pt.Value.Add(c.Cash)), Invested: f64(c.Invested),
+				In: f64(c.Day.In), Out: f64(c.Day.Out), Adj: f64(c.Day.Adj)})
 		}
 	}
 	if !p.late.Load() {
@@ -157,6 +159,8 @@ func (e *Engine) Overview(ctx context.Context, scope string) ([]byte, error) {
 		sum := portfolio.Now(l.Acts, l.Pairs, p.memoize, at)
 		r := newReplay(l, p.memoize)
 		r.run(l, at)
+		m := p.money(l)
+		_, cash, flows := m.Now(scope, p.memoize, at)
 
 		type point struct {
 			D string  `json:"d"`
@@ -169,9 +173,8 @@ func (e *Engine) Overview(ctx context.Context, scope string) ([]byte, error) {
 		for n, d := range s.days {
 			pts[n] = point{d.T.Format(time.DateOnly), r2(d.Value), r2(d.Invested), r6(x[n])}
 		}
-		// The last point is now's value, as the portfolio sees it; dividends
-		// came back out of it.
-		value, invested := f64(sum.Value), f64(sum.Invested.Sub(r.Dividends))
+		// Now's value, cash included, against every external flow.
+		value, invested := f64(sum.Value.Add(cash)), f64(flows.Invested())
 		var xirr *float64
 		if rate, ok := perf.XIRR(perf.Flows(s.days, 0)); ok && len(s.days) > 0 {
 			rate = r6(rate)
@@ -184,6 +187,9 @@ func (e *Engine) Overview(ctx context.Context, scope string) ([]byte, error) {
 				stable = stable.Add(h.Value)
 			}
 			classes[Class(h.Asset)] += f64(h.Value)
+		}
+		if cash.IsPositive() {
+			classes[ClassCash] += f64(cash)
 		}
 		for k, v := range classes {
 			classes[k] = r2(v)
@@ -199,9 +205,13 @@ func (e *Engine) Overview(ctx context.Context, scope string) ([]byte, error) {
 				"realized": r2(f64(sum.Realized)), "unrealized": r2(f64(sum.Unrealized)),
 				"rewards": r2(f64(sum.Rewards)), "dividends": r2(f64(r.Dividends)), "interest": r2(f64(r.Interest)),
 				"fees": r2(f64(r.Fees)), "stable": r2(f64(stable)), "xirr": xirr,
+				// Money put in and taken out, the corrections apart (in
+				// invested, not here), and the cash held.
+				"paidIn": r2(f64(flows.In)), "paidOut": r2(f64(flows.Out)), "contributed": r2(f64(flows.Net())),
+				"adjusted": r2(f64(flows.Adj)), "cash": r2(f64(cash)),
 			},
 			"classes":  classes,
-			"unpriced": assets(sum.Unpriced),
+			"unpriced": assets(append(sum.Unpriced, m.unpricedCash(scope, p.memoize, at)...)),
 		}, nil
 	})
 }
@@ -233,13 +243,16 @@ type coinView struct {
 	Spark []float64 `json:"spark,omitempty"`
 }
 
-func coinOf(t *tally, h *portfolio.Holding) coinView {
+func coinOf(t *tally, h *portfolio.Holding, total decimal.Decimal) coinView {
 	v := coinView{Asset: t.Asset, Qty: "0", Realized: r2(f64(t.Realized)), Rewards: r2(f64(t.Rewards)), Dividends: r2(f64(t.Dividends)),
 		Fees: r2(f64(t.Fees)), Stable: model.CashLike(t.Asset), First: t.First.UTC().Format(time.DateOnly),
 		ID: AssetID(t.Asset), Class: Class(t.Asset)}
 	if h != nil {
 		v.Qty, v.Price, v.Value, v.Cost = h.Qty.String(), f64(h.Price), r2(f64(h.Value)), r2(f64(h.Cost))
-		v.Unrealized, v.Share, v.Held = r2(f64(h.Unrealized)), r6(f64(h.Share)), true
+		v.Unrealized, v.Held = r2(f64(h.Unrealized)), true
+		if total.IsPositive() {
+			v.Share = r6(f64(h.Value.Div(total)))
+		}
 		if h.Qty.IsPositive() {
 			v.AvgCost = sig(f64(h.Cost.Div(h.Qty)))
 		}
@@ -252,15 +265,16 @@ func coinOf(t *tally, h *portfolio.Holding) coinView {
 	return v
 }
 
-// coins: every crypto and security ever held, held ones first by value.
-func coins(r *replay, sum portfolio.Summary) []coinView {
+// coins: every crypto and security ever held, held ones first by value;
+// shares are of total (cash included).
+func coins(r *replay, sum portfolio.Summary, total decimal.Decimal) []coinView {
 	held := map[string]*portfolio.Holding{}
 	for i := range sum.Assets {
 		held[sum.Assets[i].Asset.Key()] = &sum.Assets[i]
 	}
 	out := []coinView{}
 	for k, t := range r.coins {
-		out = append(out, coinOf(t, held[k]))
+		out = append(out, coinOf(t, held[k], total))
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i], out[j]
@@ -293,21 +307,27 @@ func (e *Engine) Stats(ctx context.Context, scope string) ([]byte, error) {
 		sum := portfolio.Now(l.Acts, l.Pairs, p.memoize, at)
 		r := newReplay(l, p.memoize)
 		r.run(l, at)
+		cashList, cash, _ := p.money(l).Now(scope, p.memoize, at)
 
 		type month struct {
 			M      string  `json:"m"`
 			Return float64 `json:"ret"`
-			In     float64 `json:"in"`
-			Out    float64 `json:"out"`
+			// Money put in and taken out (≥ 0); Adj: the corrections.
+			In  float64 `json:"in"`
+			Out float64 `json:"out"`
+			Adj float64 `json:"adj"`
 			// The month's rewards (staking), dividends (net of tax) and
 			// interest on cash.
 			Rewards   float64 `json:"rewards"`
 			Dividends float64 `json:"dividends"`
 			Interest  float64 `json:"interest"`
 			Value     float64 `json:"value"`
-			Invested  float64 `json:"invested"`
-			// Earned: rewards and dividends so far, at their value when
-			// received (interest is on cash, outside the value).
+			// Invested: every external flow so far, the corrections
+			// among them (Adjusted).
+			Invested float64 `json:"invested"`
+			Adjusted float64 `json:"adjusted"`
+			// Earned: rewards, dividends and interest so far, at their value
+			// when received.
 			Earned float64 `json:"earned"`
 		}
 		type sums struct{ rewards, dividends, interest float64 }
@@ -323,18 +343,19 @@ func (e *Engine) Stats(ctx context.Context, scope string) ([]byte, error) {
 			m.interest += f64(v.Interest)
 		}
 		months := []month{}
-		earned := 0.0
+		earned, adjusted := 0.0, 0.0
 		for _, m := range perf.Monthly(s.days) {
 			x := byMonth[m.Month]
 			if x == nil {
 				x = &sums{}
 			}
-			earned += x.rewards + x.dividends
-			months = append(months, month{m.Month, r6(m.Return), r2(m.In), r2(m.Out), r2(x.rewards), r2(x.dividends), r2(x.interest),
-				r2(m.Value), r2(m.Invested), r2(earned)})
+			earned += x.rewards + x.dividends + x.interest
+			adjusted += m.Adj
+			months = append(months, month{m.Month, r6(m.Return), r2(m.In), r2(m.Out), r2(m.Adj), r2(x.rewards), r2(x.dividends), r2(x.interest),
+				r2(m.Value), r2(m.Invested), r2(adjusted), r2(earned)})
 		}
 
-		list := coins(r, sum)
+		list := coins(r, sum, sum.Value.Add(cash))
 		// Sparklines: the last 30 days' closes of what is held.
 		for i := range list {
 			if !list[i].Held || list[i].Stable {
@@ -346,7 +367,8 @@ func (e *Engine) Stats(ctx context.Context, scope string) ([]byte, error) {
 				}
 			}
 		}
-		return map[string]any{"currency": Currency, "at": at, "months": months, "assets": list}, nil
+		return map[string]any{"currency": Currency, "at": at, "months": months, "assets": list,
+			"cash": cashView(l, cashList, sum.Value.Add(cash))}, nil
 	})
 }
 
@@ -423,8 +445,9 @@ func (e *Engine) Asset(ctx context.Context, symbol string) ([]byte, error) {
 			marks = append(marks, marker{m.Time.UTC().Format(time.DateOnly), m.Buy, m.Qty.String(), r2(f64(m.Value)),
 				sig(f64(m.Value.Div(m.Qty)))})
 		}
+		_, cash, _ := p.money(l).Now(ScopeAll, p.memoize, at)
 		var view coinView
-		for _, c := range coins(r, sum) {
+		for _, c := range coins(r, sum, sum.Value.Add(cash)) {
 			if c.Asset.Key() == key {
 				view = c
 			}
@@ -434,4 +457,44 @@ func (e *Engine) Asset(ctx context.Context, symbol string) ([]byte, error) {
 		}
 		return map[string]any{"currency": Currency, "at": at, "step": step, "coin": view, "points": pts, "markers": marks}, nil
 	})
+}
+
+// cashAccount is an account's cash, for the pages: its value in euros and
+// each currency held.
+type cashAccount struct {
+	Account Ref     `json:"account"`
+	Value   float64 `json:"value"`
+	Share   float64 `json:"share"`
+	Held    []struct {
+		Symbol string `json:"symbol"`
+		Qty    string `json:"qty"`
+	} `json:"held"`
+}
+
+// cashView groups cash by account, largest first; shares are of total.
+func cashView(l *Ledger, list []Cash, total decimal.Decimal) []cashAccount {
+	out := []cashAccount{}
+	at := map[string]int{}
+	for _, c := range list {
+		n, ok := at[c.Acc]
+		if !ok {
+			n = len(out)
+			at[c.Acc] = n
+			out = append(out, cashAccount{Account: l.ref(c.Acc)})
+		}
+		a := &out[n]
+		a.Value += f64(c.Value)
+		a.Held = append(a.Held, struct {
+			Symbol string `json:"symbol"`
+			Qty    string `json:"qty"`
+		}{c.Cur.Symbol, c.Qty.StringFixed(2)})
+	}
+	for i := range out {
+		if total.IsPositive() {
+			out[i].Share = r6(out[i].Value / f64(total))
+		}
+		out[i].Value = r2(out[i].Value)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Value > out[j].Value })
+	return out
 }
