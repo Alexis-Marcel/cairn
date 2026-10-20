@@ -207,7 +207,7 @@ func decode(w http.ResponseWriter, r *http.Request, max int64, v any) bool {
 // ---- reads computed from the activities
 
 func (s *Server) portfolio(w http.ResponseWriter, r *http.Request) {
-	b, err := s.Books.Portfolio(r.Context())
+	b, err := s.Books.Portfolio(r.Context(), r.URL.Query().Get("scope"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -217,7 +217,7 @@ func (s *Server) portfolio(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	b, err := s.Books.History(r.Context(), q.Get("from"), q.Get("to"), q.Get("step"))
+	b, err := s.Books.History(r.Context(), q.Get("from"), q.Get("to"), q.Get("step"), q.Get("scope"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -226,7 +226,7 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
-	b, err := s.Books.Overview(r.Context())
+	b, err := s.Books.Overview(r.Context(), r.URL.Query().Get("scope"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -235,7 +235,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
-	b, err := s.Books.Stats(r.Context())
+	b, err := s.Books.Stats(r.Context(), r.URL.Query().Get("scope"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -298,5 +298,11 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"activities": n, "sync": sv})
+	l, err := s.Books.Ledger(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	// Scopes are offered when the history holds both crypto and securities.
+	writeJSON(w, 200, map[string]any{"activities": n, "sync": sv, "scopes": l.Both()})
 }

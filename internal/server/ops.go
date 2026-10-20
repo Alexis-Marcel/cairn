@@ -140,6 +140,18 @@ func (s *Server) listOps(w http.ResponseWriter, r *http.Request) {
 			f.Asset = a.Symbol
 		}
 	}
+	scope, err := books.ParseScope(q.Get("scope"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if scope != books.ScopeAll {
+		f.Kind = string(model.Security)
+		if scope == books.ScopeCrypto {
+			f.Kind = string(model.Crypto)
+		}
+		f.CashOf = l.ScopeAccounts(scope)
+	}
 	if f.Limit <= 0 || f.Limit > 200 {
 		f.Limit = 50
 	}

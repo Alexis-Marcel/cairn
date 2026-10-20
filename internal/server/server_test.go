@@ -305,3 +305,39 @@ func TestStatsRoutes(t *testing.T) {
 		t.Fatal("unknown coin")
 	}
 }
+
+// Scopes: the status offers them once there are crypto and securities;
+// the operations follow, cash with the account it sits on.
+func TestScopes(t *testing.T) {
+	c := newClient(t)
+	var st struct{ Scopes bool }
+	c.add(map[string]string{"kind": "buy", "date": "2024-01-10", "newAccount": "Binance", "asset": "BTC", "qty": "0.1", "total": "4000"})
+	c.do("GET", "/api/status", nil, &st)
+	if st.Scopes {
+		t.Fatal("one class: no scopes")
+	}
+	etf := c.add(map[string]string{"kind": "buy", "date": "2024-02-10", "newAccount": "Trade Republic", "asset": "IE00B4L5Y983",
+		"name": "iShares Core MSCI World", "qty": "10", "total": "1000"})
+	c.add(map[string]string{"kind": "deposit", "date": "2024-02-01", "account": etf.Account.ID, "asset": "EUR", "qty": "2000"})
+	c.do("GET", "/api/status", nil, &st)
+	if !st.Scopes {
+		t.Fatal("two classes: scopes")
+	}
+	for scope, want := range map[string]int{"": 3, "all": 3, "crypto": 1, "securities": 2} {
+		var ops struct{ Total int }
+		c.do("GET", "/api/operations?scope="+scope, nil, &ops)
+		if ops.Total != want {
+			t.Errorf("scope %q: %d operations, want %d", scope, ops.Total, want)
+		}
+	}
+	var o struct {
+		Total struct{ Value, Invested float64 }
+	}
+	c.do("GET", "/api/overview?scope=securities", nil, &o)
+	if o.Total.Value != 1200 || o.Total.Invested != 1000 {
+		t.Errorf("securities: %+v", o.Total)
+	}
+	if c.do("GET", "/api/stats?scope=gold", nil, &map[string]string{}) != 400 {
+		t.Error("unknown scope")
+	}
+}
