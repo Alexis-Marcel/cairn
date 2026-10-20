@@ -1,5 +1,5 @@
-// Impôts: one year of sales for euros, as the lines of form 2086, and a CSV
-// of them to copy into the form.
+// Impôts: one year of crypto sales for euros, as the lines of form 2086,
+// and a CSV of them to copy into the form. Stocks and ETFs are left out.
 
 import { useMemo, useState } from "react";
 import { get, useLoad, type History, type TaxFR } from "../api";
@@ -93,6 +93,8 @@ export function Taxes({ rev }: { rev: number }) {
           <Segmented label="Année" className="chips" options={years.map((y) => ({ value: y, label: String(y) }))} value={year} onChange={setPicked} />
         )}
       </div>
+
+      <p className="muted tax-scope">Formulaire 2086 : cryptos seulement, actions et ETF n'y entrent pas.</p>
 
       <label className="switch">
         <input type="checkbox" checked={income} onChange={(e) => setIncome(e.target.checked)} />

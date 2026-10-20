@@ -1,8 +1,9 @@
-// One coin: its price with what I paid on average and my buys and sales,
+// One asset, a coin or a security: its price with what I paid on average and my buys and sales,
 // what I hold over time, my results on it, and its operations.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { get, useLoad, type AssetDetail, type Op, type Ops, type PeriodKey } from "../api";
+import { CLASS_ONE, label, longName, unit } from "../assets";
 import { COINS } from "../coins";
 import { Coin } from "../components/Coin";
 import { LineChart } from "../components/LineChart";
@@ -40,7 +41,11 @@ export function Asset({ symbol, rev, go, onOpen }: { symbol: string; rev: number
   const [period, setPeriod] = useState<PeriodKey>(() => remembered("assetPeriod", "1A", ["7J", "1M", "YTD", "1A", "Tout"] as const));
   const [scrub, setScrub] = useState<number | null>(null);
   const [qScrub, setQScrub] = useState<number | null>(null);
-  const name = COINS.find((c) => c.symbol === symbol)?.name;
+  const known = a.data?.coin.asset;
+  const name = known ? longName(known) : COINS.find((c) => c.symbol === symbol)?.name;
+  useEffect(() => {
+    if (known) document.title = `${label(known)} – Cairn`;
+  }, [known]);
 
   const s = useMemo(() => {
     const pts = a.data?.points ?? [];
@@ -84,6 +89,9 @@ export function Asset({ symbol, rev, go, onOpen }: { symbol: string; rev: number
   const d = a.data;
   if (!d || !s) return <AssetSkeleton symbol={symbol} name={name} />;
   const c = d.coin;
+  const sec = c.asset.kind === "security";
+  const what = label(c.asset);
+  const units = unit(c.asset);
   const first = s.part[0];
   const last = s.part[s.part.length - 1];
   const cur = scrub !== null ? s.part[scrub] : last;
@@ -107,10 +115,10 @@ export function Asset({ symbol, rev, go, onOpen }: { symbol: string; rev: number
       </a>
       <section className="hero asset-hero" aria-labelledby="h-asset">
         <div className="asset-id">
-          <Coin symbol={symbol} size={44} />
+          <Coin asset={c.asset} cls={c.class} size={44} />
           <div>
-            <h1 id="h-asset">{name ?? symbol}</h1>
-            <p className="muted">{name ? symbol : "Crypto"}</p>
+            <h1 id="h-asset">{name ?? what}</h1>
+            <p className="muted">{sec ? `${CLASS_ONE[c.class]} · ${c.asset.isin ?? c.asset.symbol}` : name ? symbol : "Crypto"}</p>
           </div>
         </div>
         <p className="hero-when">{scrub !== null ? day(utc(cur.d)) : "Cours"}</p>
@@ -134,7 +142,7 @@ export function Asset({ symbol, rev, go, onOpen }: { symbol: string; rev: number
           axis={(v) => (v >= 100 ? eur(v, { cents: false }) : price(v))}
           height={300}
           dataKey={period}
-          label={`Cours de ${symbol} ${SINCE[period]}, avec le prix moyen payé et les achats et ventes. Flèches pour parcourir.`}
+          label={`Cours de ${what} ${SINCE[period]}, avec le prix moyen payé et les achats et ventes. Flèches pour parcourir.`}
           scrub={scrub}
           onScrub={setScrub}
           tip={(i) => {
@@ -214,7 +222,9 @@ export function Asset({ symbol, rev, go, onOpen }: { symbol: string; rev: number
           <div>
             <dt>Valeur</dt>
             <dd>{eur(c.value)}</dd>
-            <dd className="figure-sub">{qty(c.qty)} {symbol}</dd>
+            <dd className="figure-sub">
+              {qty(c.qty)} {units}
+            </dd>
           </div>
           <div>
             <dt>Prix moyen</dt>
@@ -231,11 +241,21 @@ export function Asset({ symbol, rev, go, onOpen }: { symbol: string; rev: number
             <dd className={tone(c.realized)}>{eur(c.realized, { sign: true })}</dd>
             <dd className="figure-sub">ventes, frais déduits</dd>
           </div>
-          <div>
-            <dt>Récompenses</dt>
-            <dd>{eur(c.rewards)}</dd>
-            <dd className="figure-sub">{c.fees > 0 ? `frais ${eur(c.fees)}` : ""}</dd>
-          </div>
+          {sec ? (
+            <div>
+              <dt>Dividendes</dt>
+              <dd>{eur(c.dividends)}</dd>
+              <dd className="figure-sub">
+                {c.rewards > 0 ? `+ ${eur(c.rewards)} offerts` : c.fees > 0 ? `frais ${eur(c.fees)}` : "nets d'impôt"}
+              </dd>
+            </div>
+          ) : (
+            <div>
+              <dt>Récompenses</dt>
+              <dd>{eur(c.rewards)}</dd>
+              <dd className="figure-sub">{c.fees > 0 ? `frais ${eur(c.fees)}` : ""}</dd>
+            </div>
+          )}
           <div className="total-gain">
             <dt>Gain total</dt>
             <dd className={tone(c.gain)}>{eur(c.gain, { sign: true })}</dd>
@@ -248,7 +268,7 @@ export function Asset({ symbol, rev, go, onOpen }: { symbol: string; rev: number
         <section aria-labelledby="h-qty" className="qty-sec">
           <div className="sec-head">
             <h2 id="h-qty">Quantité détenue</h2>
-            <span className="muted num">{qScrub !== null ? `${qty(s.q[qScrub])} ${symbol} le ${day(s.t[qScrub])}` : `${qty(c.qty)} ${symbol}`}</span>
+            <span className="muted num">{qScrub !== null ? `${qty(s.q[qScrub])} ${units} le ${day(s.t[qScrub])}` : `${qty(c.qty)} ${units}`}</span>
           </div>
           <LineChart
             t={s.t}
@@ -258,7 +278,7 @@ export function Asset({ symbol, rev, go, onOpen }: { symbol: string; rev: number
             axis={(v) => qty(v)}
             height={150}
             dataKey={"q" + period}
-            label={`Quantité de ${symbol} détenue ${SINCE[period]}`}
+            label={`Quantité de ${what} détenue ${SINCE[period]}`}
             scrub={qScrub}
             onScrub={setQScrub}
           />
@@ -301,10 +321,8 @@ function AssetSkeleton({ symbol, name }: { symbol: string; name?: string }) {
     <div className="asset-page" aria-busy="true">
       <section className="hero asset-hero">
         <div className="asset-id">
-          <Coin symbol={symbol} size={44} />
-          <div>
-            <h1>{name ?? symbol}</h1>
-          </div>
+          {name || !/^[A-Z]{2}[A-Z0-9]{9}\d$/.test(symbol) ? <Coin symbol={symbol} size={44} /> : <Skel w={44} h={44} r={13} />}
+          <div>{name || !/^[A-Z]{2}[A-Z0-9]{9}\d$/.test(symbol) ? <h1>{name ?? symbol}</h1> : <Skel w={220} h={28} r={8} />}</div>
         </div>
         <Skel w="min(300px, 70%)" h={44} r={10} className="skel-hero" />
         <Skel w={160} h={18} />

@@ -8,7 +8,20 @@ import { useCallback, useEffect, useState } from "react";
 export interface Asset {
   kind: "crypto" | "fiat" | "security";
   symbol: string;
+  isin?: string;
   name?: string;
+}
+
+/** crypto, stablecoin, stock, ETF (and fund), cash. */
+export type AssetClass = "crypto" | "stable" | "stock" | "etf" | "cash";
+
+/** An asset the operations use (GET /api/assets), most used first. id: ISIN or symbol. */
+export interface AssetRef {
+  id: string;
+  symbol: string;
+  kind: Asset["kind"];
+  name?: string;
+  class: AssetClass;
 }
 
 export interface Amount {
@@ -63,6 +76,8 @@ export interface Portfolio {
     unrealized: string;
     share: string;
     sources: { id: string; name: string; qty: string }[];
+    id: string;
+    class: AssetClass;
   }[];
   sources: (SourceRef & { value: string })[];
   unpriced: Asset[];
@@ -174,7 +189,7 @@ export interface Account {
   count: number;
 }
 
-export type Kind = "buy" | "sell" | "swap" | "deposit" | "withdrawal" | "reward" | "transfer" | "fee" | "correction";
+export type Kind = "buy" | "sell" | "swap" | "deposit" | "withdrawal" | "reward" | "dividend" | "interest" | "transfer" | "fee" | "correction";
 export type Origin = "manual" | "import" | "fundarr";
 
 /** An operation, as the Opérations page lists it. */
@@ -212,6 +227,7 @@ export interface Entry {
   to?: string;
   newTo?: string;
   asset: string;
+  name?: string;
   qty: string;
   total?: string;
   fee?: string;
@@ -277,10 +293,16 @@ export interface Overview {
     realized: number;
     unrealized: number;
     rewards: number;
+    /** Paid by securities, net of tax; part of the gain. */
+    dividends: number;
+    /** On cash, outside the value and the gain. */
+    interest: number;
     fees: number;
     stable: number;
     xirr: number | null;
   };
+  /** The value by class of asset. */
+  classes: Partial<Record<AssetClass, number>>;
   unpriced: Asset[];
 }
 
@@ -296,6 +318,7 @@ export interface CoinStat {
   unrealized: number;
   realized: number;
   rewards: number;
+  dividends: number;
   fees: number;
   gain: number;
   pct?: number;
@@ -303,12 +326,26 @@ export interface CoinStat {
   stable?: boolean;
   first: string;
   spark?: number[];
+  /** ISIN or symbol: what links take. */
+  id: string;
+  class: AssetClass;
 }
 
 /** GET /api/stats: month by month, and each coin. */
 export interface Stats {
   at: string;
-  months: { m: string; ret: number; in: number; out: number; rewards: number; value: number; invested: number; earned: number }[];
+  months: {
+    m: string;
+    ret: number;
+    in: number;
+    out: number;
+    rewards: number;
+    dividends: number;
+    interest: number;
+    value: number;
+    invested: number;
+    earned: number;
+  }[];
   assets: CoinStat[];
 }
 

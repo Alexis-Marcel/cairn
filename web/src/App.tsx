@@ -88,7 +88,8 @@ export function App() {
     return () => removeEventListener("popstate", on);
   }, []);
   useEffect(() => {
-    document.title = r.page === "asset" ? `${r.symbol} – Cairn` : titles[r.page];
+    // An asset's page names itself once it knows its name.
+    if (r.page !== "asset") document.title = titles[r.page];
   }, [r]);
 
   const go = useCallback((path: string) => {

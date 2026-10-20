@@ -1,6 +1,6 @@
-// The form in its dialog, with the accounts and coins it offers.
+// The form in its dialog, with the accounts and assets it offers.
 
-import { get, useLoad, type Account, type Op } from "../api";
+import { get, useLoad, type Account, type AssetRef, type Op } from "../api";
 import { KIND } from "../ops";
 import { Dialog } from "./Dialog";
 import { OpDetails, OpForm } from "./OpForm";
@@ -8,7 +8,7 @@ import { Loading } from "./State";
 
 export function OpDialog({ op, onClose, onSaved }: { op?: Op; onClose: () => void; onSaved: () => void }) {
   const accounts = useLoad("accounts", (s) => get<Account[]>("accounts", s));
-  const used = useLoad("assets", (s) => get<string[]>("assets", s));
+  const used = useLoad("assets", (s) => get<AssetRef[]>("assets", s));
   const title = !op ? "Ajouter une opération" : op.editable ? "Modifier l'opération" : KIND[op.kind];
   return (
     <Dialog title={title} onClose={onClose}>

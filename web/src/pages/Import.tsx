@@ -145,7 +145,7 @@ export function Import({ onDone, onHome }: { onDone: () => void; onHome: () => v
                 </div>
                 <div>
                   <dt>type</dt>
-                  <dd>achat, vente, echange, depot, retrait, recompense, frais</dd>
+                  <dd>achat, vente, echange, depot, retrait, recompense, dividende, frais</dd>
                 </div>
                 <div>
                   <dt>actif, quantite</dt>
@@ -153,7 +153,7 @@ export function Import({ onDone, onHome }: { onDone: () => void; onHome: () => v
                 </div>
                 <div>
                   <dt>prix</dt>
-                  <dd>achat et vente : le total en euros</dd>
+                  <dd>achat et vente : le total en euros ; dividende : le montant reçu</dd>
                 </div>
                 <div>
                   <dt>frais</dt>
@@ -162,6 +162,10 @@ export function Import({ onDone, onHome }: { onDone: () => void; onHome: () => v
                 <div>
                   <dt>recu, quantite_recue</dt>
                   <dd>échange : la crypto reçue</dd>
+                </div>
+                <div>
+                  <dt>isin, nom</dt>
+                  <dd>une action ou un ETF : IE00B4L5Y983, son nom</dd>
                 </div>
                 <div>
                   <dt>compte, note</dt>
@@ -230,7 +234,7 @@ export function Import({ onDone, onHome }: { onDone: () => void; onHome: () => v
                       <td className="muted">{r.line}</td>
                       <th scope="row">
                         <span className="asset">
-                          <Coin symbol={r.base!.asset.symbol} />
+                          <Coin asset={r.base!.asset} />
                           <span>
                             <span className="sym">{KIND[r.kind!]}</span>
                             {r.duplicate && <span className="sub always">déjà là</span>}
@@ -239,7 +243,7 @@ export function Import({ onDone, onHome }: { onDone: () => void; onHome: () => v
                       </th>
                       <td className="mid muted">{r.time && date(r.time)}</td>
                       <td>
-                        {amount(r.base!.qty, r.base!.asset.symbol)}
+                        {amount(r.base!.qty, r.base!.asset)}
                       </td>
                       <td className="wide muted">{r.account || "–"}</td>
                     </tr>

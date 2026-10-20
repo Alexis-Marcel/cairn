@@ -6,7 +6,7 @@ export function Welcome({ onAdd, onImport, onSync }: { onAdd: () => void; onImpo
   const ways = [
     {
       title: "Ajouter une opération",
-      text: "Un achat, une vente, une récompense.",
+      text: "Un achat, une vente, un dividende.",
       on: onAdd,
       icon: <path d="M12 5v14M5 12h14" />,
     },
@@ -27,7 +27,7 @@ export function Welcome({ onAdd, onImport, onSync }: { onAdd: () => void; onImpo
     <div className="welcome">
       <Mark />
       <h1>Pose la première pierre</h1>
-      <p className="muted">Ce que valent tes cryptos, et ce qu'elles t'ont rapporté.</p>
+      <p className="muted">Ce que valent tes placements, et ce qu'ils t'ont rapporté.</p>
       <ul className="ways">
         {ways.map((w, n) => (
           <li key={w.title}>

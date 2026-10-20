@@ -706,6 +706,12 @@ p {
   color: var(--ink-2);
   min-height: 1.5em;
 }
+.income-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 4px;
+}
 .chart-note b {
   font-weight: 600;
   color: var(--ink);
@@ -816,6 +822,23 @@ p {
   font-size: 11px;
   font-weight: 650;
 }
+/* A stock or an ETF: a rounded tile, not a coin. */
+.coin.tile {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 30%;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+.coin.tile.etf {
+  background: color-mix(in srgb, var(--c0) 14%, var(--raised));
+  color: var(--c0);
+}
+.coin.tile.stock {
+  background: color-mix(in srgb, var(--c3) 14%, var(--raised));
+  color: var(--c3);
+}
 .coin-list {
   list-style: none;
   margin: 0 -10px;
@@ -846,6 +869,11 @@ p {
 .coin-name,
 .coin-value {
   font-weight: 560;
+}
+.coin-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .coin-sub,
 .coin-gain {
@@ -1203,7 +1231,7 @@ p {
 }
 .rank button {
   display: grid;
-  grid-template-columns: 6.5em minmax(0, 1fr) auto;
+  grid-template-columns: 11em minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
   width: 100%;
@@ -1225,7 +1253,13 @@ p {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   font-weight: 560;
+}
+.rank-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .rank-name .coin {
   width: 20px;
@@ -1498,6 +1532,10 @@ p {
 .op-sym {
   font-weight: 400;
   color: var(--muted);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .op-sub {
   font-size: var(--t-s);
@@ -1862,6 +1900,13 @@ td.left {
   padding: 36px 0 20px;
 }
 
+.grid2 > .field.wide {
+  grid-column: 1 / -1;
+}
+.tax-scope {
+  margin: -8px 0 18px;
+  font-size: var(--t-s);
+}
 .switch {
   display: inline-flex;
   align-items: center;

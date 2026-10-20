@@ -3,6 +3,7 @@
 
 import type { Op } from "../api";
 import { date, eur, monthLong, num } from "../format";
+import { label } from "../assets";
 import { KIND, detail, moves } from "../ops";
 import { Coin } from "./Coin";
 
@@ -25,10 +26,10 @@ export function OpList({ items, onOpen }: { items: Op[]; onOpen: (op: Op) => voi
               return (
                 <li key={op.id}>
                   <button type="button" className="op-row" onClick={() => onOpen(op)}>
-                    <Coin symbol={m.symbol} size={40} />
+                    <Coin asset={m.asset} size={40} />
                     <span className="op-main">
                       <span className="op-title-line">
-                        {KIND[op.kind]} <span className="op-sym">{m.symbol === "EUR" ? "" : m.symbol}</span>
+                        {op.type === "tax" ? "Impôt" : KIND[op.kind]} <span className="op-sym">{m.asset.kind === "fiat" ? "" : label(m.asset)}</span>
                       </span>
                       <span className="op-sub">
                         {detail(op)} · {date(op.time)}
@@ -36,7 +37,7 @@ export function OpList({ items, onOpen }: { items: Op[]; onOpen: (op: Op) => voi
                     </span>
                     <span className="op-amounts num">
                       <span className="op-qty">{m.text}</span>
-                      <span className="op-val">{m.other ?? (op.value && m.symbol !== "EUR" ? eur(num(op.value)) : "")}</span>
+                      <span className="op-val">{m.other ?? (op.value && op.base.asset.kind !== "fiat" ? eur(num(op.value)) : "")}</span>
                     </span>
                   </button>
                 </li>
