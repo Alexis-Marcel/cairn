@@ -3370,30 +3370,6 @@ details summary::marker {
   background: var(--moss) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat;
 }
 
-/* The plan's form */
-.plan-form {
-  display: grid;
-  gap: 24px;
-}
-.plan-form fieldset {
-  border: 0;
-  margin: 0;
-  padding: 0;
-}
-.plan-form legend {
-  padding: 0;
-  margin-bottom: 12px;
-  font-weight: 600;
-}
-.grid2.tight {
-  gap: 10px;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-}
-.checks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-}
 .check {
   display: flex;
   align-items: center;
@@ -3414,12 +3390,25 @@ details summary::marker {
   .model th:last-child {
     display: none;
   }
-  .model-line {
-    grid-template-columns: minmax(0, 1fr) 6.5rem auto;
+  .edit-row {
+    grid-template-columns: minmax(0, 1fr) 5.5rem auto;
   }
-  .model-line > .field:nth-child(2) {
+  .edit-row > .model-acc {
     grid-column: 1 / -1;
     grid-row: 2;
+  }
+  .edit-head {
+    display: none;
+  }
+  .out-list li {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .out-list li .check,
+  .out-list li .link-btn {
+    grid-row: 2;
+  }
+  .out-list li .check {
+    grid-column: 2;
   }
   .next-amount {
     width: 100%;
@@ -3630,44 +3619,144 @@ details summary::marker {
   font-size: var(--t-xs);
 }
 
-/* The model's form */
-.model-lines {
+
+/* The model, changed in place */
+.edit-rows {
   display: grid;
-  gap: 14px;
+  max-width: 820px;
 }
-.model-line {
+.edit-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.1fr) 6rem auto;
-  align-items: end;
-  gap: 10px;
-  padding-bottom: 14px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 6rem minmax(2.5rem, auto);
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--line);
 }
-/* The column names once, on the first line; the others keep them for screen readers. */
-.model-line + .model-line > .field:not(.model-line-name) > label,
-.model-line + .model-line > .field:not(.model-line-name) > span:first-child {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
+.edit-head {
+  font-size: var(--t-xs);
+  color: var(--muted);
+  padding-bottom: 4px;
+}
+.edit-row select,
+.edit-row input,
+.edit-name {
+  font: inherit;
+  font-size: var(--t-s);
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px 12px;
+  min-height: 40px;
+  width: 100%;
+}
+.edit-row .with-unit input {
+  padding-right: 32px;
+}
+.edit-add {
+  align-items: end;
+  border-bottom: 0;
+  padding-top: 16px;
+}
+.edit-add > .field > label {
+  font-size: var(--t-xs);
+  color: var(--muted);
+}
+.edit-add .btn {
+  grid-column: auto;
   white-space: nowrap;
+  padding-inline: 12px;
 }
-.model-line .icon-btn {
-  margin-bottom: 6px;
+.edit-total {
+  margin: 8px 0 0;
+  font-size: var(--t-s);
 }
-.model-line-name {
-  grid-column: 1 / -1;
+.out-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-width: 820px;
+  display: grid;
 }
-.model-foot {
-  display: flex;
+.out-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--t-s);
+}
+.edit-rules {
+  font-size: var(--t-s);
+  color: var(--ink-2);
+  margin: 0 0 20px;
+  max-width: 820px;
+  line-height: 2.4;
+}
+.edit-rules input {
+  font: inherit;
+  width: 3.2em;
+  margin: 0 6px;
+  padding: 4px 6px;
+  text-align: center;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+
+/* Objectif, on Accueil */
+.goal-head {
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 14px;
 }
-.model-foot p {
+.goal-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.goal-fields .field.inline input {
+  width: 110px;
+}
+.goal-fields #g-year {
+  width: 80px;
+  padding-right: 12px;
+}
+.kept {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 20px;
+  margin-bottom: 8px;
+}
+.kept .plan-bars {
+  flex: 0 1 360px;
+}
+.kept .plan-bar-col {
+  height: 48px;
+}
+.kept-note {
+  margin: 0 0 8px;
+  font-size: var(--t-s);
+}
+.kept p {
   margin: 0;
   font-size: var(--t-s);
+}
+button.tag {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  border: 0;
+  cursor: pointer;
+}
+.tax-cards {
+  margin-top: var(--gap);
+}
+.stat .field.inline input[type="date"] {
+  width: auto;
+  min-width: 160px;
 }

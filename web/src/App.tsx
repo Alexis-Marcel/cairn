@@ -161,7 +161,7 @@ export function App() {
       page = <Asset key={r.symbol} symbol={r.symbol!} rev={rev} go={go} onOpen={(op) => setDialog({ op })} />;
       break;
     case "strategy":
-      page = <Strategy rev={rev} go={go} />;
+      page = <Strategy rev={rev} />;
       break;
     case "taxes":
       page = <Taxes rev={rev} />;

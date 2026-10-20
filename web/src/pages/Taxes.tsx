@@ -4,6 +4,7 @@
 import { useMemo, useState } from "react";
 import { get, useLoad, type History, type TaxFR } from "../api";
 import { Coin } from "../components/Coin";
+import { TaxCards } from "../components/PlanCards";
 import { Segmented } from "../components/Segmented";
 import { Failed, Loading } from "../components/State";
 import { date, eur, num, pct, tone } from "../format";
@@ -202,6 +203,7 @@ export function Taxes({ rev }: { rev: number }) {
           )}
         </div>
       )}
+      <TaxCards rev={rev} />
     </div>
   );
 }
