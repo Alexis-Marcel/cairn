@@ -828,6 +828,154 @@ p {
   gap: 4px;
 }
 
+/* Relier, Réglages */
+
+/* #root keeps 56px under it: the page fills the screen, no more. */
+.first {
+  min-height: calc(100vh - 56px);
+  min-height: calc(100dvh - 56px);
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 56px 0 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.first .mark {
+  width: 44px;
+  height: 44px;
+  margin-bottom: 28px;
+  color: var(--ink);
+}
+.first h1 {
+  margin-bottom: 36px;
+  font-size: var(--t-xl);
+  line-height: 1.15;
+}
+
+.link-form {
+  display: grid;
+  gap: 20px;
+  max-width: 400px;
+}
+.field {
+  display: grid;
+  gap: 7px;
+}
+.field > span,
+.field > label {
+  font-size: var(--t-s);
+  font-weight: 450;
+}
+.field input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  min-height: 46px;
+  width: 100%;
+}
+.field input::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+.field input:hover {
+  border-color: var(--stone);
+}
+.field input:focus-visible {
+  border-color: var(--focus);
+  outline-offset: 0;
+  outline-width: 1px;
+  border-radius: 10px;
+}
+.field small {
+  font-size: var(--t-xs);
+}
+.form-error {
+  color: var(--garnet);
+  font-size: var(--t-s);
+  font-weight: 450;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+.btn.primary {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+  padding-inline: 22px;
+}
+.btn.primary:hover {
+  background: color-mix(in srgb, var(--ink) 86%, var(--bg));
+}
+.btn.danger {
+  background: var(--garnet);
+  color: var(--bg);
+  border-color: var(--garnet);
+}
+.btn.quiet {
+  background: none;
+  border-color: transparent;
+  color: var(--muted);
+}
+.btn.quiet:hover {
+  color: var(--ink);
+}
+.btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.btn.primary:disabled:hover {
+  background: var(--ink);
+}
+
+.settings {
+  padding: 40px 0 0;
+  max-width: 480px;
+}
+.settings h1 {
+  margin-bottom: 32px;
+}
+.linked {
+  margin: 0 0 20px;
+  display: grid;
+  gap: 2px;
+}
+.linked dt {
+  font-size: var(--t-s);
+  color: var(--muted);
+}
+.linked dd {
+  margin: 0;
+  font-size: var(--t-l);
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.settings .note {
+  font-size: var(--t-s);
+}
+.confirm {
+  display: grid;
+  gap: 12px;
+}
+
+.site-foot {
+  margin-top: 40px;
+  font-size: var(--t-xs);
+}
+.site-foot a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.site-foot a:hover {
+  color: var(--ink);
+}
+
 /* Narrow screens */
 
 @media (max-width: 860px) {
@@ -849,6 +997,10 @@ p {
 }
 
 @media (max-width: 520px) {
+  .first {
+    justify-content: flex-start;
+    padding-top: 12vh;
+  }
   .table .mid {
     display: none;
   }
