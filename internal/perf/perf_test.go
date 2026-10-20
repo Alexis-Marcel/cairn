@@ -140,3 +140,23 @@ func TestMonthly(t *testing.T) {
 	near(t, "value", m[1].Value, 129)
 	near(t, "invested", m[0].Invested, 100)
 }
+
+// The gain over what was at stake: the opening value and what came in since.
+func TestSimple(t *testing.T) {
+	// The whole history: 1 000 € in, worth 1 500 €: +50 %.
+	pct, ok := Simple(0, 0, 1500, 1000)
+	if !ok {
+		t.Fatal("no base")
+	}
+	near(t, "all", pct, 0.5)
+	// Opens at 1 000 € (800 € in), 500 € more put in, ends at 1 650 €:
+	// gain 150 € on 1 500 € at stake.
+	pct, _ = Simple(1000, 800, 1650, 1300)
+	near(t, "period", pct, 0.1)
+	// 600 € taken out: gain 50 € on the 1 000 € at the opening.
+	pct, _ = Simple(1000, 800, 450, 200)
+	near(t, "withdrawn", pct, 0.05)
+	if _, ok := Simple(0, 0, 0, -10); ok {
+		t.Fatal("nothing at stake")
+	}
+}

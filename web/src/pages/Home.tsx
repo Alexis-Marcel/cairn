@@ -36,6 +36,16 @@ export const SINCE: Record<PeriodKey, string> = {
 
 type View = "value" | "perf";
 
+/**
+ * The gain over what was at stake: the opening value plus the money put in
+ * since, net of what was taken out (never below the opening value). As the
+ * server's period figure (internal/perf.Simple).
+ */
+function simple(open: { v: number; i: number }, p: { v: number; i: number }): number | null {
+  const base = open.v + Math.max(0, p.i - open.i);
+  return base > 0.5 ? (p.v - p.i - (open.v - open.i)) / base : null;
+}
+
 /** Up or down, as a small triangle. */
 export function Arrow({ n }: { n: number }) {
   return (
@@ -100,7 +110,9 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
   const { pts, open } = series;
   const at = scrub !== null && scrub < pts.length ? pts[scrub] : null;
   const gain = at ? at.v - at.i - (open.v - open.i) : per.gain;
-  const ret = at ? at.x / (open.x || 1) - 1 : per.twr;
+  // Valeur: the gain over what was at stake; Performance: time-weighted.
+  const twr = at ? at.x / (open.x || 1) - 1 : per.twr;
+  const pctOf = at ? simple(open, at) : per.pct;
 
   const changePeriod = (v: PeriodKey) => {
     setPeriod(v);
@@ -117,14 +129,26 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
         <p className="hero-value num">
           <BigEuros value={at ? at.v : o.total.value} instant={!!at} />
         </p>
-        <p className={`hero-change num ${tone(gain)}`}>
-          <Arrow n={gain} />
-          <Num value={gain} instant={!!at} format={(v) => eur(v, { sign: true, cents: true })} />
-          <span>
-            (<Num value={ret} instant={!!at} format={(v) => pct(v, { sign: true })} />)
-          </span>
-          <span className="since">{at && open.d ? "depuis le " + day(utc(open.d)) : SINCE[period]}</span>
-        </p>
+        {view === "value" ? (
+          <p className={`hero-change num ${tone(gain)}`}>
+            <Arrow n={gain} />
+            <Num value={gain} instant={!!at} format={(v) => eur(v, { sign: true, cents: true })} />
+            {pctOf !== null && (
+              <span>
+                (<Num value={pctOf} instant={!!at} format={(v) => pct(v, { sign: true })} />)
+              </span>
+            )}
+            <span className="since">{at && open.d ? "depuis le " + day(utc(open.d)) : SINCE[period]}</span>
+          </p>
+        ) : (
+          <p className={`hero-change num ${tone(twr)}`}>
+            <Arrow n={twr} />
+            <Num value={twr} instant={!!at} format={(v) => pct(v, { sign: true })} />
+            <span className="since">
+              performance {at && open.d ? "depuis le " + day(utc(open.d)) : SINCE[period]}, hors apports
+            </span>
+          </p>
+        )}
       </section>
 
       <section className="graph" aria-label="Évolution">

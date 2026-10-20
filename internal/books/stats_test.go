@@ -168,6 +168,8 @@ func TestOverview(t *testing.T) {
 	}
 	all := byKey["Tout"]
 	near(t, "all gain", all.Gain, 558)
+	// Over the whole history: the gain over the net contributions.
+	near(t, "all pct", *all.Pct, 558.0/402)
 	near(t, "all twr", all.TWR, last.X-1)
 	// This year: BTC went from 40 000 to 60 000 € on the first day.
 	ytd := byKey["YTD"]
@@ -176,6 +178,11 @@ func TestOverview(t *testing.T) {
 	}
 	near(t, "ytd twr", ytd.TWR, 0.5)
 	near(t, "ytd gain", ytd.Gain, 0.026*20000)
+	// At stake: the 1 040 € held at the eve (the sale took money out): +50 %,
+	// as BTC did.
+	near(t, "ytd pct", *ytd.Pct, 0.5)
+	// The last month: nothing moved.
+	near(t, "1M pct", *byKey["1M"].Pct, 0)
 	near(t, "1M twr", byKey["1M"].TWR, 0)
 }
 

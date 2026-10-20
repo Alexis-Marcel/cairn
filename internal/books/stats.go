@@ -97,7 +97,9 @@ type Period struct {
 	Start float64 `json:"start"` // value at the opening
 	End   float64 `json:"end"`
 	Gain  float64 `json:"gain"`
-	TWR   float64 `json:"twr"`
+	// Pct: the gain over what was at stake (perf.Simple), nil when nothing was.
+	Pct *float64 `json:"pct"`
+	TWR float64  `json:"twr"`
 }
 
 // periods measures each period over days.
@@ -124,6 +126,10 @@ func periods(days []perf.Day, today time.Time) []Period {
 		p.Start = r2(openV)
 		p.Gain = r2(last.Value - last.Invested - (openV - openI))
 		p.TWR = r6(perf.TWR(f, from+1, len(f)))
+		if pct, ok := perf.Simple(openV, openI, last.Value, last.Invested); ok {
+			pct = r6(pct)
+			p.Pct = &pct
+		}
 		out = append(out, p)
 	}
 	return out

@@ -268,7 +268,8 @@ export interface Overview {
   step: "day" | "week";
   /** d: day, v: value, i: invested, x: time-weighted index (1 at the start). */
   points: { d: string; v: number; i: number; x: number }[];
-  periods: { key: PeriodKey; from: number; start: number; end: number; gain: number; twr: number }[];
+  /** gain: beyond money put in or taken out; pct: gain over what was at stake (null when nothing was); twr: time-weighted. */
+  periods: { key: PeriodKey; from: number; start: number; end: number; gain: number; pct: number | null; twr: number }[];
   total: {
     value: number;
     invested: number;

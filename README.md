@@ -4,7 +4,7 @@ Where my crypto stands: what it is worth, what I put in, what it became, and how
 
 ![Accueil](docs/screenshots/accueil-clair.png)
 
-- **Accueil**: the value and its change over 7J, 1M, YTD, 1A or Tout; a chart to scrub with a finger (value against money put in, or performance time-weighted so deposits are not gains); gain, yearly return (money-weighted), net contributions, rewards, fees; each coin with its month; allocation by coin or account, stablecoins apart.
+- **Accueil**: the value and its change over 7J, 1M, YTD, 1A or Tout, in euros and as a share of what was at stake (the opening value plus money put in since); a chart to scrub with a finger (value against money put in, or performance time-weighted so deposits are not gains); gain, yearly return (money-weighted), net contributions, rewards, fees; each coin with its month; allocation by coin or account, stablecoins apart.
 - **Statistiques** (on Accueil): monthly returns year by year, money put in each month, cumulative rewards, what came from contributions, rewards and the market, gain by coin.
 - **Actifs**: every coin, held or sold. One page each: its price with my average cost and my buys and sales, the quantity held, unrealized and realized gain, rewards, fees, its operations.
 - **Activité**: every operation by month, by account or coin, searchable. Add, change or remove those entered by hand or imported.
