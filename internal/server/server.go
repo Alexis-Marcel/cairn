@@ -58,6 +58,9 @@ func (s *Server) Handler(dist fs.FS) http.Handler {
 	api.HandleFunc("GET /api/tax/fr", s.taxFR)
 	api.HandleFunc("GET /api/activities", s.activities)
 
+	api.HandleFunc("GET /api/plan", s.getPlan)
+	api.HandleFunc("PUT /api/plan", s.putPlan)
+
 	api.HandleFunc("GET /api/operations", s.listOps)
 	api.HandleFunc("POST /api/operations", s.createOp)
 	api.HandleFunc("GET /api/operations/{id}", s.getOp)

@@ -390,3 +390,29 @@ export interface AssetDetail {
   points: { d: string; p: number; q: number; avg?: number }[];
   markers: { d: string; buy: boolean; qty: string; value: number; price: number }[];
 }
+
+/** GET and PUT /api/plan: the strategy. Shares are whole percents. */
+export interface Plan {
+  /** Saved once; otherwise these are the defaults. */
+  set: boolean;
+  /** Of the invested whole (cash apart). */
+  crypto: number;
+  /** Of the crypto; the rest goes to the others. */
+  btc: number;
+  eth: number;
+  /** Of stocks and ETFs. */
+  etf: number;
+  /** Points crypto may drift before an alert. */
+  band: number;
+  /** The share one stock or small coin may reach. */
+  line: number;
+  monthly: number;
+  /** YYYY-MM: the plan is followed from then. */
+  since?: string;
+  goal: number;
+  goalYear: number;
+  /** The day the PEA was opened. */
+  pea?: string;
+  /** The accounts that are the owner's own wallets; null: guessed from their names. */
+  custody: string[] | null;
+}
