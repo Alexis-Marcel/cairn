@@ -370,7 +370,7 @@ type Filter struct {
 	Account string // account id
 	Asset   string // symbol, base or quote
 	Origin  string
-	Query   string // words found in the type, an asset, the account or the note
+	Query   string // words found in the type, an asset or its name, the account or the note
 	Offset  int
 	Limit   int
 }
@@ -392,8 +392,9 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Activity, int, error) {
 	for _, w := range strings.Fields(f.Query) {
 		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(w) + "%"
 		where = append(where, `(a.asset LIKE ? ESCAPE '\' OR a.quote LIKE ? ESCAPE '\' OR c.name LIKE ? ESCAPE '\'
-			OR json_extract(a.data, '$.note') LIKE ? ESCAPE '\' OR a.type LIKE ? ESCAPE '\')`)
-		args = append(args, like, like, like, like, like)
+			OR json_extract(a.data, '$.note') LIKE ? ESCAPE '\' OR a.type LIKE ? ESCAPE '\'
+			OR json_extract(a.data, '$.base.asset.name') LIKE ? ESCAPE '\' OR json_extract(a.data, '$.quote.asset.name') LIKE ? ESCAPE '\')`)
+		args = append(args, like, like, like, like, like, like, like)
 	}
 	cond := strings.Join(where, " AND ")
 	var total int

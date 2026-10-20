@@ -115,33 +115,47 @@ func card(a model.Activity) bool {
 // under the payment's native id and ":tax".
 func taxKey(source, native string) string { return source + "\x00" + native }
 
+// atKey: a tax booked at the very moment of a dividend, on its account, when
+// the platform does not say which payment it was taken from.
+func atKey(source string, t time.Time) string {
+	return source + "\x00@" + t.UTC().Format(time.RFC3339Nano)
+}
+
 // withheld: the tax taken from each dividend (or given back), in euros.
 func withheld(acts []model.Activity) map[string]decimal.Decimal {
 	out := map[string]decimal.Decimal{}
 	for _, a := range acts {
-		native, ok := strings.CutSuffix(a.NativeID, ":tax")
-		if !ok || a.Base.Asset.Kind != model.Fiat || a.Base.Asset.Symbol != Currency {
+		if a.Base.Asset.Kind != model.Fiat || a.Base.Asset.Symbol != Currency {
 			continue
 		}
+		native, ok := strings.CutSuffix(a.NativeID, ":tax")
 		k := taxKey(a.SourceID, native)
-		switch a.Type {
-		case model.Tax:
+		switch {
+		case ok && a.Type == model.Tax:
 			out[k] = out[k].Add(a.Base.Qty)
-		case model.Deposit:
+		case ok && a.Type == model.Deposit:
 			out[k] = out[k].Sub(a.Base.Qty)
+		case a.Type == model.Tax:
+			k = atKey(a.SourceID, a.Time)
+			out[k] = out[k].Add(a.Base.Qty)
 		}
 	}
 	return out
 }
 
-// dividend: what a dividend brought, in euros, net of its fee and tax.
+// dividend: what a dividend brought, in euros, net of its fee and tax. The
+// tax is taken once (taxes loses it).
 func dividend(a model.Activity, taxes map[string]decimal.Decimal, worth func(model.Amount, time.Time) decimal.Decimal) decimal.Decimal {
 	v := worth(a.Base, a.Time)
 	if a.Fee != nil && a.Fee.Asset.Kind == model.Fiat {
 		v = v.Sub(worth(*a.Fee, a.Time))
 	}
-	if a.NativeID != "" {
-		v = v.Sub(taxes[taxKey(a.SourceID, a.NativeID)])
+	for _, k := range []string{taxKey(a.SourceID, a.NativeID), atKey(a.SourceID, a.Time)} {
+		if t, ok := taxes[k]; ok && (a.NativeID != "" || k != taxKey(a.SourceID, "")) {
+			v = v.Sub(t)
+			delete(taxes, k)
+			break
+		}
 	}
 	return v
 }

@@ -215,3 +215,18 @@ func TestTaxCryptoOnly(t *testing.T) {
 		t.Fatalf("portfolio %s", tax.Disposals[0].Portfolio)
 	}
 }
+
+// A tax booked at the very moment of a dividend, without saying which, is
+// taken from it.
+func TestDividendTaxAtSameMoment(t *testing.T) {
+	q := func(a model.Amount) *model.Amount { return &a }
+	e := mixed(t,
+		store.Activity{Activity: model.Activity{ID: "div2", NativeID: "x-1", Time: at("2024-12-01"), Type: model.Dividend,
+			Base: model.Amt(eur, "10"), Quote: q(model.Amt(etf, "0"))}},
+		store.Activity{Activity: model.Activity{ID: "tax2", NativeID: "x-2", Time: at("2024-12-01"), Type: model.Tax, Base: model.Amt(eur, "1.5")}},
+	)
+	body, _ := e.Overview(context.Background())
+	var o struct{ Total struct{ Dividends float64 } }
+	json.Unmarshal(body, &o)
+	near(t, "dividends", o.Total.Dividends, 16.5)
+}
