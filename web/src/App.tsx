@@ -1,17 +1,32 @@
-// Three pages and a header. Routing is the address bar, nothing more. Until
-// Cairn is linked to a Fundarr, there is only the page that links it.
+// The pages and a header. Routing is the address bar, nothing more. Before
+// any operation, Accueil offers three ways to start.
 
-import { useEffect, useState } from "react";
-import { get, type Setup } from "./api";
-import { LinkForm } from "./components/LinkForm";
+import { useCallback, useEffect, useState } from "react";
+import { get, useLoad, type Op, type Status } from "./api";
 import { Mark } from "./components/Mark";
+import { OpDialog } from "./components/OpDialog";
 import { Failed, Loading } from "./components/State";
+import { ago } from "./format";
 import { Home } from "./pages/Home";
+import { Import } from "./pages/Import";
+import { Operations } from "./pages/Operations";
 import { Settings } from "./pages/Settings";
 import { Taxes } from "./pages/Taxes";
+import { Welcome } from "./pages/Welcome";
 
-type Path = "/" | "/impots" | "/reglages";
-const titles: Record<Path, string> = { "/": "Cairn", "/impots": "Impôts – Cairn", "/reglages": "Réglages – Cairn" };
+type Path = "/" | "/operations" | "/impots" | "/reglages" | "/importer";
+const titles: Record<Path, string> = {
+  "/": "Cairn",
+  "/operations": "Opérations – Cairn",
+  "/impots": "Impôts – Cairn",
+  "/reglages": "Réglages – Cairn",
+  "/importer": "Importer – Cairn",
+};
+const nav: { path: Path; label: string }[] = [
+  { path: "/", label: "Accueil" },
+  { path: "/operations", label: "Opérations" },
+  { path: "/impots", label: "Impôts" },
+];
 
 const current = (): Path => {
   const p = location.pathname.replace(/\/+$/, "") || "/";
@@ -20,9 +35,10 @@ const current = (): Path => {
 
 export function App() {
   const [path, setPath] = useState<Path>(current);
-  const [setup, setSetup] = useState<Setup>();
-  const [error, setError] = useState("");
-  const [tick, setTick] = useState(0);
+  // Bumped after every change: the pages load again.
+  const [rev, setRev] = useState(0);
+  const [dialog, setDialog] = useState<{ op?: Op } | null>(null);
+  const status = useLoad("status" + rev, (s) => get<Status>("status", s));
 
   useEffect(() => {
     const on = () => setPath(current());
@@ -30,81 +46,98 @@ export function App() {
     return () => removeEventListener("popstate", on);
   }, []);
   useEffect(() => {
-    const ctl = new AbortController();
-    get<Setup>("setup", ctl.signal).then(setSetup, (e) => {
-      if (!ctl.signal.aborted) setError(e instanceof Error ? e.message : String(e));
-    });
-    return () => ctl.abort();
-  }, [tick]);
-  const linked = setup?.configured;
-  useEffect(() => {
-    document.title = linked === false ? "Relier – Cairn" : titles[path];
-  }, [path, linked]);
+    document.title = titles[path];
+  }, [path]);
 
-  const to = (p: Path) => {
-    if (p !== path) {
-      history.pushState(null, "", p);
-      setPath(p);
-    }
-    scrollTo(0, 0);
-  };
+  const to = useCallback(
+    (p: Path, hash = "") => {
+      if (p !== path || hash) {
+        history.pushState(null, "", p + hash);
+        setPath(p);
+      }
+      scrollTo(0, 0);
+    },
+    [path],
+  );
   const go = (p: Path) => (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
     e.preventDefault();
     to(p);
   };
-  // Linked (again): the dashboard. Unlinked: the first-run page.
-  const changed = (s: Setup) => {
-    setSetup(s);
-    to("/");
-  };
+  const changed = useCallback(() => setRev((r) => r + 1), []);
+  const add = () => setDialog({});
 
-  if (!setup)
-    return error ? (
-      <Failed
-        error={error}
-        retry={() => {
-          setError("");
-          setTick((t) => t + 1);
-        }}
-      />
-    ) : (
-      <Loading />
-    );
+  const st = status.data;
+  if (!st)
+    return status.error ? <Failed error={status.error} retry={status.reload} /> : <Loading />;
 
-  if (!setup.configured)
-    return (
-      <main className="first">
-        <Mark />
-        <h1>Relier Cairn à Fundarr</h1>
-        <LinkForm onLinked={changed} />
-      </main>
-    );
+  const empty = st.activities === 0;
+  const sync = st.sync;
+
+  let page: React.ReactNode;
+  switch (path) {
+    case "/operations":
+      page = <Operations rev={rev} onOpen={(op) => setDialog({ op })} onImport={() => to("/importer")} />;
+      break;
+    case "/impots":
+      page = <Taxes rev={rev} />;
+      break;
+    case "/reglages":
+      page = <Settings sync={sync} rev={rev} onChange={changed} onImport={() => to("/importer")} />;
+      break;
+    case "/importer":
+      page = <Import onDone={changed} onHome={() => to("/")} />;
+      break;
+    default:
+      page = empty ? (
+        <Welcome onAdd={add} onImport={() => to("/importer")} onSync={() => to("/reglages", "#fundarr")} />
+      ) : (
+        <Home rev={rev} />
+      );
+  }
 
   return (
     <>
       <header className="top">
-        <a href="/" className="brand" onClick={go("/")}>
+        <a href="/" className="brand" onClick={go("/")} aria-label="Cairn, accueil">
           <Mark />
-          Cairn
+          <span className="brand-name">Cairn</span>
         </a>
         <nav aria-label="Pages">
-          {(["/", "/impots"] as Path[]).map((p) => (
-            <a key={p} href={p} onClick={go(p)} aria-current={p === path ? "page" : undefined}>
-              {p === "/" ? "Accueil" : "Impôts"}
+          {nav.map((n) => (
+            <a key={n.path} href={n.path} onClick={go(n.path)} aria-current={n.path === path ? "page" : undefined}>
+              {n.label}
             </a>
           ))}
         </nav>
+        <button type="button" className="btn primary add" onClick={add} aria-label="Ajouter une opération">
+          <svg viewBox="0 0 16 16" aria-hidden>
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+          <span className="add-label">Ajouter</span>
+        </button>
       </header>
-      <main>
-        {path === "/impots" ? <Taxes /> : path === "/reglages" ? <Settings setup={setup} onChange={changed} /> : <Home />}
-      </main>
-      {path !== "/reglages" && (
-        <footer className="site-foot">
-          <a href="/reglages" onClick={go("/reglages")}>
-            Réglages
+      <main>{page}</main>
+      <footer className="site-foot">
+        <a href="/reglages" onClick={go("/reglages")} aria-current={path === "/reglages" ? "page" : undefined}>
+          Réglages
+        </a>
+        {sync.linked && (
+          <a href="/reglages" onClick={go("/reglages")} className={sync.lastError ? "sync-state down" : "sync-state"} title={sync.lastError || sync.url}>
+            <span className="dot" aria-hidden />
+            {sync.lastError ? "Fundarr en erreur" : sync.lastSync ? `Fundarr · ${ago(sync.lastSync)}` : "Fundarr"}
           </a>
-        </footer>
+        )}
+      </footer>
+      {dialog && (
+        <OpDialog
+          op={dialog.op}
+          onClose={() => setDialog(null)}
+          onSaved={() => {
+            setDialog(null);
+            changed();
+          }}
+        />
       )}
     </>
   );

@@ -64,3 +64,12 @@ export const time = (iso: string) => tLocal.format(new Date(iso));
 
 /** The CSS class of a signed amount. */
 export const tone = (n: number) => (n > 0 ? "up" : n < 0 ? "down" : "");
+
+/** How long ago, briefly: à l'instant, il y a 5 min, il y a 2 h, 12 mars 2026. */
+export function ago(iso: string, now = Date.now()) {
+  const s = (now - Date.parse(iso)) / 1000;
+  if (s < 60) return "à l'instant";
+  if (s < 3600) return `il y a ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `il y a ${Math.floor(s / 3600)} h`;
+  return "le " + date(iso);
+}

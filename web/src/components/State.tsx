@@ -1,4 +1,4 @@
-// What a page shows while it loads, or when Fundarr did not answer.
+// What a page shows while it loads, or when something did not answer.
 
 export function Failed({ error, retry }: { error: string; retry: () => void }) {
   return (
@@ -11,6 +11,6 @@ export function Failed({ error, retry }: { error: string; retry: () => void }) {
   );
 }
 
-export function Loading() {
-  return <div className="loading" aria-busy="true" aria-label="Chargement" />;
+export function Loading({ small }: { small?: boolean }) {
+  return <div className={small ? "loading small" : "loading"} aria-busy="true" aria-label="Chargement" />;
 }

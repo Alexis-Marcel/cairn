@@ -21,6 +21,8 @@ function niceTicks(lo: number, max: number, count: number) {
   const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw) ?? 10 * p;
   const out: number[] = [];
   for (let v = Math.floor(lo / step) * step; v <= max + step * 0.01; v += step) out.push(v);
+  // The axis always reaches above the highest point.
+  if (out[out.length - 1] < max) out.push(out[out.length - 1] + step);
   return out;
 }
 

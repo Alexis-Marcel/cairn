@@ -10,7 +10,7 @@ export function Coin({ symbol }: { symbol: string }) {
   if (url) return <img className="coin" src={url} alt="" width={22} height={22} />;
   return (
     <span className="coin coin-none" aria-hidden>
-      {symbol.slice(0, 1)}
+      {symbol.toUpperCase() === "EUR" ? "€" : symbol.slice(0, 1)}
     </span>
   );
 }
