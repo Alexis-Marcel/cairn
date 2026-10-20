@@ -9,7 +9,6 @@ package books
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -44,7 +43,7 @@ type Engine struct {
 	led   atomic.Pointer[Ledger]
 	costs atomic.Pointer[costMemo]
 	memo  map[string]memo
-	ser   *series // the history behind the statistics
+	ser   map[string]*series // the history behind the statistics, by scope
 }
 
 type memo struct {
@@ -56,7 +55,7 @@ type memo struct {
 // New returns an engine over st, pricing with prices.
 func New(st *store.Store, prices *price.Service) *Engine {
 	return &Engine{st: st, prices: prices, Now: func() time.Time { return time.Now().UTC() },
-		TTL: time.Minute, Wait: 30 * time.Second, memo: map[string]memo{}}
+		TTL: time.Minute, Wait: 30 * time.Second, memo: map[string]memo{}, ser: map[string]*series{}}
 }
 
 // Error is a refusal the API passes on with its status.
@@ -75,6 +74,9 @@ type Ledger struct {
 	Pairs    map[string]string // deposit → the withdrawal it came from
 	Peer     map[string]string // either side of a transfer → the other
 	Accounts map[string]store.Account
+	// AccScope: the scope each account's cash belongs to (scope.go).
+	AccScope                 map[string]string
+	HasCrypto, HasSecurities bool
 }
 
 // Ledger loads the activities, again only when they changed.
@@ -141,6 +143,7 @@ func Build(all []store.Activity, accs []store.Account) *Ledger {
 		}
 		return l.Acts[i].ID < l.Acts[j].ID
 	})
+	l.classify()
 	return l
 }
 
@@ -186,6 +189,17 @@ func (e *Engine) pricer(ctx context.Context, l *Ledger) *pricer {
 		return v, err == nil
 	}, Currency))
 	return p
+}
+
+// scoped is l seen from scope, crossing trades valued with p.
+func (p *pricer) scoped(l *Ledger, scope string) *Ledger {
+	return l.Scope(scope, func(a model.Amount, at time.Time) decimal.Decimal {
+		if a.Qty.IsZero() {
+			return decimal.Zero
+		}
+		u, _ := p.memoize(a.Asset, at)
+		return u.Mul(a.Qty)
+	})
 }
 
 // UnitPrice is one unit of an asset on a day, in euros.
@@ -261,8 +275,13 @@ func (l *Ledger) ref(id string) Ref {
 
 // Portfolio is GET /api/portfolio, in the shape of Fundarr's
 // /api/v1/portfolio.
-func (e *Engine) Portfolio(ctx context.Context) ([]byte, error) {
-	return e.cached(ctx, "portfolio", func(l *Ledger, p *pricer) (any, error) {
+func (e *Engine) Portfolio(ctx context.Context, scope string) ([]byte, error) {
+	scope, err := ParseScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	return e.cached(ctx, "portfolio?"+scope, func(l *Ledger, p *pricer) (any, error) {
+		l = p.scoped(l, scope)
 		at := e.Now()
 		s := portfolio.Now(l.Acts, l.Pairs, p.memoize, at)
 		type heldIn struct {
@@ -312,7 +331,11 @@ func (e *Engine) Portfolio(ctx context.Context) ([]byte, error) {
 }
 
 // History is GET /api/portfolio/history?from=&to=&step=.
-func (e *Engine) History(ctx context.Context, from, to, step string) ([]byte, error) {
+func (e *Engine) History(ctx context.Context, from, to, step, scope string) ([]byte, error) {
+	scope, err := ParseScope(scope)
+	if err != nil {
+		return nil, err
+	}
 	if step == "" {
 		step = "day"
 	}
@@ -333,7 +356,8 @@ func (e *Engine) History(ctx context.Context, from, to, step string) ([]byte, er
 		}
 		*d.to = v
 	}
-	return e.cached(ctx, "history?"+from+"&"+to+"&"+step, func(l *Ledger, p *pricer) (any, error) {
+	return e.cached(ctx, "history?"+from+"&"+to+"&"+step+"&"+scope, func(l *Ledger, p *pricer) (any, error) {
+		l = p.scoped(l, scope)
 		today := e.Now().Truncate(24 * time.Hour)
 		start, end := f, t
 		if start.IsZero() {
@@ -498,19 +522,20 @@ func (e *Engine) Value(ctx context.Context, a model.Activity) (decimal.Decimal, 
 	return u.Mul(a.Base.Qty), true
 }
 
-// Warm computes the home page's answers ahead, so it opens at once.
+// Warm computes the home page's answers ahead, so it opens at once, in
+// every scope when there are two.
 func (e *Engine) Warm(ctx context.Context) {
-	if _, err := e.Portfolio(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		return
+	scopes := []string{ScopeAll}
+	if l, err := e.Ledger(ctx); err == nil && l.Both() {
+		scopes = append(scopes, ScopeCrypto, ScopeSecurities)
 	}
-	if _, err := e.Overview(ctx); err != nil {
-		return
-	}
-	e.Stats(ctx)
-	if _, err := e.History(ctx, "", "", "day"); err != nil {
-		var be *Error
-		if errors.As(err, &be) && be.Status == 422 {
-			e.History(ctx, "", "", "week")
+	for _, sc := range scopes {
+		if _, err := e.Portfolio(ctx, sc); err != nil {
+			return
 		}
+		if _, err := e.Overview(ctx, sc); err != nil {
+			return
+		}
+		e.Stats(ctx, sc)
 	}
 }

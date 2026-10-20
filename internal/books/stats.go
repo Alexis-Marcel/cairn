@@ -46,9 +46,9 @@ func r6(v float64) float64 { return math.Round(v*1e6) / 1e6 }
 
 // series computes the history from the first operation to today, kept
 // while nothing changes (the caller holds e.mu).
-func (e *Engine) series(l *Ledger, p *pricer) *series {
+func (e *Engine) series(l *Ledger, p *pricer, scope string) *series {
 	now := e.Now()
-	if s := e.ser; s != nil && s.version == l.Version && now.Sub(s.at) < e.TTL {
+	if s := e.ser[scope]; s != nil && s.version == l.Version && now.Sub(s.at) < e.TTL {
 		return s
 	}
 	today := now.Truncate(dayLen)
@@ -73,7 +73,7 @@ func (e *Engine) series(l *Ledger, p *pricer) *series {
 		}
 	}
 	if !p.late.Load() {
-		e.ser = s
+		e.ser[scope] = s
 	}
 	return s
 }
@@ -144,11 +144,16 @@ func periods(days []perf.Day, today time.Time) []Period {
 
 // Overview is GET /api/overview: the value day by day with the money put
 // in and the time-weighted index, each period's change, and the totals.
-func (e *Engine) Overview(ctx context.Context) ([]byte, error) {
-	return e.cached(ctx, "overview", func(l *Ledger, p *pricer) (any, error) {
+func (e *Engine) Overview(ctx context.Context, scope string) ([]byte, error) {
+	scope, err := ParseScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	return e.cached(ctx, "overview?"+scope, func(l *Ledger, p *pricer) (any, error) {
+		l = p.scoped(l, scope)
 		at := e.Now()
 		today := at.Truncate(dayLen)
-		s := e.series(l, p)
+		s := e.series(l, p, scope)
 		sum := portfolio.Now(l.Acts, l.Pairs, p.memoize, at)
 		r := newReplay(l, p.memoize)
 		r.run(l, at)
@@ -275,11 +280,16 @@ func coins(r *replay, sum portfolio.Summary) []coinView {
 
 // Stats is GET /api/stats: month by month (returns, money in and out,
 // rewards, value and invested), and each coin's results.
-func (e *Engine) Stats(ctx context.Context) ([]byte, error) {
-	return e.cached(ctx, "stats", func(l *Ledger, p *pricer) (any, error) {
+func (e *Engine) Stats(ctx context.Context, scope string) ([]byte, error) {
+	scope, err := ParseScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	return e.cached(ctx, "stats?"+scope, func(l *Ledger, p *pricer) (any, error) {
+		l = p.scoped(l, scope)
 		at := e.Now()
 		today := at.Truncate(dayLen)
-		s := e.series(l, p)
+		s := e.series(l, p, scope)
 		sum := portfolio.Now(l.Acts, l.Pairs, p.memoize, at)
 		r := newReplay(l, p.memoize)
 		r.run(l, at)

@@ -74,7 +74,7 @@ func near(t *testing.T, what string, got, want float64) {
 
 func TestStatsCoins(t *testing.T) {
 	e := engine(t)
-	body, err := e.Stats(context.Background())
+	body, err := e.Stats(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestStatsCoins(t *testing.T) {
 
 func TestOverview(t *testing.T) {
 	e := engine(t)
-	body, err := e.Overview(context.Background())
+	body, err := e.Overview(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}

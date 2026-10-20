@@ -68,7 +68,7 @@ func mixed(t *testing.T, more ...store.Activity) *Engine {
 
 func TestMixedPortfolio(t *testing.T) {
 	e := mixed(t)
-	body, err := e.Overview(context.Background())
+	body, err := e.Overview(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestMixedPortfolio(t *testing.T) {
 
 func TestMixedStats(t *testing.T) {
 	e := mixed(t)
-	body, err := e.Stats(context.Background())
+	body, err := e.Stats(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestDividendTaxAtSameMoment(t *testing.T) {
 			Base: model.Amt(eur, "10"), Quote: q(model.Amt(etf, "0"))}},
 		store.Activity{Activity: model.Activity{ID: "tax2", NativeID: "x-2", Time: at("2024-12-01"), Type: model.Tax, Base: model.Amt(eur, "1.5")}},
 	)
-	body, _ := e.Overview(context.Background())
+	body, _ := e.Overview(context.Background(), "")
 	var o struct{ Total struct{ Dividends float64 } }
 	json.Unmarshal(body, &o)
 	near(t, "dividends", o.Total.Dividends, 16.5)

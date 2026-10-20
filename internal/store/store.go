@@ -370,9 +370,13 @@ type Filter struct {
 	Account string // account id
 	Asset   string // symbol, base or quote
 	Origin  string
-	Query   string // words found in the type, an asset or its name, the account or the note
-	Offset  int
-	Limit   int
+	// Kind: what the base or quote is (crypto, security); with it, CashOf
+	// are the accounts whose cash-only operations count too.
+	Kind   string
+	CashOf []string
+	Query  string // words found in the type, an asset or its name, the account or the note
+	Offset int
+	Limit  int
 }
 
 // List returns a page of activities, newest first, and how many match.
@@ -388,6 +392,18 @@ func (s *Store) List(ctx context.Context, f Filter) ([]Activity, int, error) {
 	}
 	if f.Origin != "" {
 		where, args = append(where, "a.origin = ?"), append(args, f.Origin)
+	}
+	if f.Kind != "" {
+		cond := `(json_extract(a.data, '$.base.asset.kind') = ? OR json_extract(a.data, '$.quote.asset.kind') = ?`
+		args = append(args, f.Kind, f.Kind)
+		if len(f.CashOf) > 0 {
+			cond += ` OR json_extract(a.data, '$.base.asset.kind') = 'fiat' AND COALESCE(json_extract(a.data, '$.quote.asset.kind'), 'fiat') = 'fiat'
+				AND a.account IN (` + strings.TrimSuffix(strings.Repeat("?,", len(f.CashOf)), ",") + `)`
+			for _, c := range f.CashOf {
+				args = append(args, c)
+			}
+		}
+		where = append(where, cond+")")
 	}
 	for _, w := range strings.Fields(f.Query) {
 		like := "%" + strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`).Replace(w) + "%"
