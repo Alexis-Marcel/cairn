@@ -18,10 +18,15 @@ COPY internal ./internal
 COPY web/embed.go ./web/
 COPY --from=web /web/dist ./web/dist
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/cairn ./cmd/cairn
+# The image has no shell: the data folder is made here.
+RUN mkdir -p /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=server /out/cairn /cairn
-ENV CAIRN_ADDR=:8080
+# Where the link to Fundarr is kept (cairn.json), writable by nonroot (65532).
+COPY --from=server --chown=65532:65532 --chmod=700 /out/data /data
+ENV CAIRN_ADDR=:8080 CAIRN_DATA=/data
+VOLUME /data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD ["/cairn", "health"]
 USER nonroot:nonroot
