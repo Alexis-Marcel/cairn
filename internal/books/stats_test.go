@@ -32,7 +32,8 @@ func at(s string) time.Time {
 //
 // Cost: 1 040 € for 0.026; the sale takes 400 €, realized 600 − 400 − 2
 // (fee) = 198 €. Left 0.016 BTC for 640 €, worth 960 €: 320 € unrealized.
-// Invested 1 000 + 2 − 600 = 402 €.
+// The buy had no euros on the account before it: 1 002 € paid from outside,
+// put in. The sale's 600 € stay on the account: value 960 + 600 = 1 560 €.
 func engine(t *testing.T) *Engine {
 	st := testutil.Store(t)
 	now := time.Date(2025, 3, 1, 18, 0, 0, 0, time.UTC)
@@ -107,6 +108,7 @@ func TestStatsCoins(t *testing.T) {
 	near(t, "fees", c.Fees, 2)
 	near(t, "gain", c.Gain, 558)
 	near(t, "pct", *c.Pct, 0.558)
+	near(t, "share, of the value cash included", c.Share, 960.0/1560)
 	if len(c.Spark) != 30 || c.Spark[29] != 60000 {
 		t.Fatalf("spark %v", c.Spark)
 	}
@@ -122,9 +124,9 @@ func TestStatsCoins(t *testing.T) {
 	// June: the reward is a gain, 40 € on 1 000 €.
 	near(t, "june return", s.Months[5].Ret, 0.04)
 	jan25 := s.Months[12]
-	near(t, "january 2025 out", jan25.Out, 600)
+	near(t, "a sale's euros stay: nothing out", jan25.Out, 0)
 	near(t, "earned", s.Months[14].Earned, 40)
-	near(t, "invested", s.Months[14].Invested, 402)
+	near(t, "invested", s.Months[14].Invested, 1002)
 }
 
 func TestOverview(t *testing.T) {
@@ -147,8 +149,8 @@ func TestOverview(t *testing.T) {
 	if err := json.Unmarshal(body, &o); err != nil {
 		t.Fatal(err)
 	}
-	near(t, "value", o.Total.Value, 960)
-	near(t, "invested", o.Total.Invested, 402)
+	near(t, "value", o.Total.Value, 1560)
+	near(t, "invested", o.Total.Invested, 1002)
 	near(t, "gain", o.Total.Gain, 558)
 	near(t, "fees", o.Total.Fees, 2)
 	near(t, "realized", o.Total.Realized, 198)
@@ -169,7 +171,7 @@ func TestOverview(t *testing.T) {
 	all := byKey["Tout"]
 	near(t, "all gain", all.Gain, 558)
 	// Over the whole history: the gain over the net contributions.
-	near(t, "all pct", *all.Pct, 558.0/402)
+	near(t, "all pct", *all.Pct, 558.0/1002)
 	near(t, "all twr", all.TWR, last.X-1)
 	// This year: BTC went from 40 000 to 60 000 € on the first day.
 	ytd := byKey["YTD"]
@@ -178,8 +180,7 @@ func TestOverview(t *testing.T) {
 	}
 	near(t, "ytd twr", ytd.TWR, 0.5)
 	near(t, "ytd gain", ytd.Gain, 0.026*20000)
-	// At stake: the 1 040 € held at the eve (the sale took money out): +50 %,
-	// as BTC did.
+	// At stake: the 1 040 € held at the eve: +50 %, as BTC did.
 	near(t, "ytd pct", *ytd.Pct, 0.5)
 	// The last month: nothing moved.
 	near(t, "1M pct", *byKey["1M"].Pct, 0)

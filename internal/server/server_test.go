@@ -82,6 +82,8 @@ type pf struct {
 
 // Bought on an exchange, moved to a wallet, half moved back and sold: the
 // figures of Fundarr's own example (pkg/portfolio), from manual entries.
+// The buy is paid from outside (4 000 € put in); the sale's 3 000 € stay
+// on the exchange, part of the value.
 func TestManualToPortfolio(t *testing.T) {
 	c := newClient(t)
 	buy := c.add(map[string]string{"kind": "buy", "date": "2024-01-10", "newAccount": "Binance", "asset": "btc", "qty": "0,1", "total": "4000"})
@@ -98,13 +100,13 @@ func TestManualToPortfolio(t *testing.T) {
 	if code := c.do("GET", "/api/portfolio", nil, &p); code != 200 {
 		t.Fatal(code)
 	}
-	want := map[string]string{"value": "3000.00", "cost": "2000.00", "realized": "1000.00", "invested": "1000.00", "rewards": "0.00"}
+	want := map[string]string{"value": "6000.00", "cost": "2000.00", "realized": "1000.00", "invested": "4000.00", "rewards": "0.00", "cash": "3000.00"}
 	for k, v := range want {
 		if p.Total[k] != v {
 			t.Errorf("%s: %s, want %s", k, p.Total[k], v)
 		}
 	}
-	if len(p.Sources) != 1 || p.Sources[0].Name != "Ledger" {
+	if len(p.Sources) != 2 || p.Sources[0].Name != "Binance" || p.Sources[0].Value != "3000.00" || p.Sources[1].Name != "Ledger" {
 		t.Errorf("sources: %+v", p.Sources)
 	}
 
@@ -128,7 +130,8 @@ func TestManualToPortfolio(t *testing.T) {
 		Points []struct{ Date, Value, Invested string } `json:"points"`
 	}
 	c.do("GET", "/api/portfolio/history?step=month", nil, &h)
-	if len(h.Points) != 24 || h.Points[0].Date != "2024-01-31" || h.Points[0].Value != "4000.00" || h.Points[23].Value != "3000.00" {
+	if len(h.Points) != 24 || h.Points[0].Date != "2024-01-31" || h.Points[0].Value != "4000.00" || h.Points[23].Value != "6000.00" ||
+		h.Points[23].Invested != "4000.00" {
 		t.Fatalf("history: %d %+v", len(h.Points), h.Points[0])
 	}
 	if c.do("GET", "/api/portfolio/history?step=hour", nil, &map[string]string{}) != 400 {
@@ -334,7 +337,8 @@ func TestScopes(t *testing.T) {
 		Total struct{ Value, Invested float64 }
 	}
 	c.do("GET", "/api/overview?scope=securities", nil, &o)
-	if o.Total.Value != 1200 || o.Total.Invested != 1000 {
+	// The ETF and the broker's 1 000 € left, against the 2 000 € put in.
+	if o.Total.Value != 2200 || o.Total.Invested != 2000 {
 		t.Errorf("securities: %+v", o.Total)
 	}
 	if c.do("GET", "/api/stats?scope=gold", nil, &map[string]string{}) != 400 {

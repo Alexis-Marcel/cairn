@@ -60,7 +60,7 @@ type replay struct {
 	coins map[string]*tally
 	// Fees: every fee paid on investments, in euros. Rewards: every reward
 	// in crypto or securities. Dividends: paid by securities, net of tax.
-	// Interest: on cash, and cash bonuses (outside the portfolio's value).
+	// Interest: on cash, and cash bonuses (the cash is in the value).
 	Fees, Rewards, Dividends, Interest decimal.Decimal
 	Markers                            []Marker
 	// Income: each day's rewards, dividends and interest, for the charts.
@@ -98,7 +98,8 @@ func newReplay(l *Ledger, price portfolio.Price) *replay {
 	return r
 }
 
-// held: what the portfolio counts, crypto and securities; cash is apart.
+// held: the assets counted one by one, crypto and securities; cash is
+// counted by account (cash.go).
 func held(a model.Asset) bool { return a.Kind == model.Crypto || a.Kind == model.Security }
 
 // card: a payment or a cash withdrawal with a platform's card (Trade
@@ -158,29 +159,6 @@ func dividend(a model.Activity, taxes map[string]decimal.Decimal, worth func(mod
 		}
 	}
 	return v
-}
-
-// paidOut is every dividend's net amount, oldest first: money that left the
-// portfolio for cash, as a sale's does.
-func paidOut(acts []model.Activity, price portfolio.Price) []Flow {
-	taxes := withheld(acts)
-	worth := func(a model.Amount, at time.Time) decimal.Decimal {
-		u, _ := price(a.Asset, at)
-		return u.Mul(a.Qty)
-	}
-	var out []Flow
-	for _, a := range acts {
-		if a.Type == model.Dividend {
-			out = append(out, Flow{a.Time, dividend(a, taxes, worth)})
-		}
-	}
-	return out
-}
-
-// Flow is an amount on a moment.
-type Flow struct {
-	T time.Time
-	V decimal.Decimal
 }
 
 // worth of an amount on a day; unpriced counts as 0.

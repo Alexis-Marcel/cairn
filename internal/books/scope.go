@@ -4,16 +4,12 @@ package books
 // ETFs alone. A scope is the history projected on its own assets, then
 // computed as the whole is.
 //
-// Cash stays outside every scope, as it stays outside the portfolio: money
-// taken out of crypto (a sale for euros) and put into stocks (a buy) is a
-// withdrawal from the crypto scope and a contribution to the stock scope,
-// the same euros twice, each on its side. A trade straight from one scope
-// to the other (rare) is cut in two the same way: a sale for its value in
-// euros on one side, a buy for that value on the other.
-//
-// What touches only cash (interest, account fees, a bank transfer's fee)
-// belongs to its account's scope: the class it trades most. Tax withheld
-// stays in every scope; it only ever counts against a dividend in its own.
+// An account's cash belongs to its account's scope: the class it trades
+// most (cash.go). What touches only cash (interest, account fees) goes
+// there too. A trade straight from one scope to the other (rare) is cut in
+// two: a sale for its value in euros on one side, a buy for that value on
+// the other. Tax withheld stays in every scope; it only ever counts against
+// a dividend in its own.
 
 import (
 	"time"
@@ -90,6 +86,36 @@ func (l *Ledger) classify() {
 			l.AccScope[acc] = ScopeCrypto
 		}
 	}
+	// An account holding cash alone goes with the accounts it moves money
+	// with, or else with the history's main class.
+	main := ScopeCrypto
+	if l.HasSecurities && !l.HasCrypto {
+		main = ScopeSecurities
+	}
+	peers := map[string]map[string]int{}
+	for _, a := range l.Acts {
+		if _, ok := l.AccScope[a.SourceID]; ok {
+			continue
+		}
+		if peers[a.SourceID] == nil {
+			peers[a.SourceID] = map[string]int{}
+		}
+		if p, ok := l.ByID[l.Peer[a.ID]]; ok {
+			if s, ok := l.AccScope[p.SourceID]; ok {
+				peers[a.SourceID][s]++
+			}
+		}
+	}
+	for acc, c := range peers {
+		switch {
+		case c[ScopeSecurities] > c[ScopeCrypto]:
+			l.AccScope[acc] = ScopeSecurities
+		case c[ScopeCrypto] > c[ScopeSecurities]:
+			l.AccScope[acc] = ScopeCrypto
+		default:
+			l.AccScope[acc] = main
+		}
+	}
 }
 
 // Both: the history holds crypto and securities, so scopes say something.
@@ -114,7 +140,7 @@ func (l *Ledger) Scope(scope string, worth func(model.Amount, time.Time) decimal
 	}
 	k := scopeKind(scope)
 	out := &Ledger{Version: l.Version, ByID: map[string]store.Activity{}, Pairs: map[string]string{}, Peer: map[string]string{},
-		Accounts: l.Accounts, AccScope: l.AccScope, HasCrypto: l.HasCrypto, HasSecurities: l.HasSecurities}
+		Accounts: l.Accounts, AccScope: l.AccScope, HasCrypto: l.HasCrypto, HasSecurities: l.HasSecurities, whole: l.Whole()}
 	// Another scope's asset, as the euros it was worth.
 	asEuros := func(x model.Amount, at time.Time) model.Amount {
 		return model.Amount{Asset: model.CryptoOrFiat(Currency), Qty: worth(x, at)}

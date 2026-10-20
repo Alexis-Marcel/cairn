@@ -12,13 +12,16 @@ import (
 	"time"
 )
 
-// Day is the portfolio at the close of a day: its value and what was
-// invested until then (external flows: euros in, minus euros out, income
-// paid out in cash among them). PaidOut is that income so far (dividends):
-// money out, but not money taken back by the investor.
+// Day is the portfolio at the close of a day: its value (cash included)
+// and what was invested until then, every external flow counted: money put
+// in, minus money taken out, plus the balance corrections. In, Out and Adj
+// are that day's own flows: money put in, taken out (≥ 0), and corrected
+// (signed); the corrections are not the investor's money, but they are not
+// gains either.
 type Day struct {
-	T                        time.Time
-	Value, Invested, PaidOut float64
+	T               time.Time
+	Value, Invested float64
+	In, Out, Adj    float64
 }
 
 // minBase: below this, a day's starting value is too small to measure a
@@ -150,9 +153,9 @@ type Month struct {
 	Month string // 2024-03
 	// Return: time-weighted, over the month.
 	Return float64
-	// In and Out: money put in and taken out during the month (Out ≥ 0),
-	// income paid out apart.
-	In, Out float64
+	// In and Out: money put in and taken out during the month (Out ≥ 0);
+	// Adj: the corrections, apart.
+	In, Out, Adj float64
 	// Value and Invested at the month's last day.
 	Value, Invested float64
 }
@@ -161,7 +164,6 @@ type Month struct {
 func Monthly(days []Day) []Month {
 	f := Factors(days)
 	var out []Month
-	prevI := 0.0
 	for n, d := range days {
 		key := d.T.UTC().Format("2006-01")
 		if len(out) == 0 || out[len(out)-1].Month != key {
@@ -169,14 +171,10 @@ func Monthly(days []Day) []Month {
 		}
 		m := &out[len(out)-1]
 		m.Return *= f[n]
-		// Contributions only: income paid out is not money taken back.
-		if flow := d.Invested + d.PaidOut - prevI; flow > 0 {
-			m.In += flow
-		} else {
-			m.Out -= flow
-		}
+		m.In += d.In
+		m.Out += d.Out
+		m.Adj += d.Adj
 		m.Value, m.Invested = d.Value, d.Invested
-		prevI = d.Invested + d.PaidOut
 	}
 	for i := range out {
 		out[i].Return--

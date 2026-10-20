@@ -25,9 +25,10 @@ var etf = model.Asset{Kind: model.Security, Symbol: "IE00B4L5Y983", ISIN: "IE00B
 //	2024-08-01 tr  interest 5 €
 //	2024-09-01 tr  saveback: 0.1 ETF (10 €) for nothing
 //
-// Value 1 500 + 1 212 = 2 712 €. Invested 1 000 + 1 001 − 8 (the net
-// dividend came back out) = 1 993 €. Gain 719 €: BTC 500, ETF 212 − 1 fee,
-// dividend 8. The card spends nothing of that.
+// The BTC was paid from outside (no euros on x): 1 000 € put in. The broker's
+// cash: 2 000 − 1 001 + 10 − 2 − 301 − 5 + 5 = 706 €. Value 1 500 + 1 212 +
+// 706 = 3 418 €. Invested 1 000 + 2 000 − 306 (the card's spending) = 2 694 €.
+// Gain 724 €: BTC 500, ETF 212 − 1 fee, dividend 8, interest 5.
 func mixed(t *testing.T, more ...store.Activity) *Engine {
 	st := testutil.Store(t)
 	now := time.Date(2025, 3, 1, 18, 0, 0, 0, time.UTC)
@@ -92,35 +93,37 @@ func TestMixedPortfolio(t *testing.T) {
 		t.Fatal(err)
 	}
 	tot := o.Total
-	near(t, "value", tot.Value, 2712)
-	near(t, "invested", tot.Invested, 1993)
-	near(t, "gain", tot.Gain, 719)
+	near(t, "value", tot.Value, 3418)
+	near(t, "invested", tot.Invested, 2694)
+	near(t, "gain", tot.Gain, 724)
 	near(t, "dividends, net of tax", tot.Dividends, 8)
 	near(t, "interest", tot.Interest, 5)
 	near(t, "rewards: the saveback", tot.Rewards, 10)
 	near(t, "fees: the ETF's, not the card's", tot.Fees, 1)
 	near(t, "crypto", o.Classes[ClassCrypto], 1500)
 	near(t, "ETF", o.Classes[ClassETF], 1212)
+	near(t, "cash", o.Classes[ClassCash], 706)
 	if len(o.Unpriced) != 0 {
 		t.Fatalf("unpriced %v", o.Unpriced)
 	}
-	// The whole history's gain is the total's; time-weighted, the 1 € fee
-	// and the saveback aside, 2024 is flat (the dividend makes up for
-	// nothing: prices do not drop here) and 2025 adds 35 %.
+	// The whole history's gain is the total's; time-weighted, 2024 adds the
+	// income less the fee (under 1 %), and 2025 a quarter: 2 716 € became
+	// 3 418 €.
 	all := o.Periods[len(o.Periods)-1]
-	near(t, "gain since the start", all.Gain, 719)
-	if all.TWR < 0.35 || all.TWR > 0.37 {
+	near(t, "gain since the start", all.Gain, 724)
+	if all.TWR < 0.26 || all.TWR > 0.28 {
 		t.Fatalf("TWR %v", all.TWR)
 	}
 	if tot.XIRR == nil || *tot.XIRR < 0.2 || *tot.XIRR > 0.4 {
 		t.Fatalf("XIRR %v", tot.XIRR)
 	}
-	// The card day changes neither the value nor the money invested.
+	// The card spends: as much out of the value as out of the money
+	// invested, no loss.
 	for i, p := range o.Points {
 		if p.D == "2024-07-01" {
 			prev := o.Points[i-1]
-			near(t, "value on the card day", p.V, prev.V)
-			near(t, "invested on the card day", p.I, prev.I)
+			near(t, "value on the card day", p.V, prev.V-301)
+			near(t, "invested on the card day", p.I, prev.I-301)
 		}
 	}
 }
@@ -152,11 +155,11 @@ func TestMixedStats(t *testing.T) {
 			near(t, "a dividend is not money taken out", m.Out, 0)
 			near(t, "June dividends", m.Dividends, 8)
 		case "2024-07":
-			near(t, "card spending is not money taken out", m.Out, 0)
+			near(t, "card spending is money taken out", m.Out, 306)
 		case "2024-08":
 			near(t, "interest", m.Interest, 5)
 		case "2025-02":
-			near(t, "earned: saveback and dividend", m.Earned, 18)
+			near(t, "earned: saveback, dividend and interest", m.Earned, 23)
 		}
 	}
 	// The ETF's page, by its ISIN.
@@ -179,11 +182,14 @@ func TestMixedStats(t *testing.T) {
 type Stats struct {
 	Months []struct {
 		M                            string
-		In, Out                      float64
+		Ret                          float64
+		In, Out, Adj                 float64
 		Rewards, Dividends, Interest float64
 		Value, Invested, Earned      float64
+		Adjusted                     float64
 	}
 	Assets []coinView
+	Cash   []cashAccount
 }
 
 // The 2086 is crypto's alone: an ETF sold in the year is not a disposal,

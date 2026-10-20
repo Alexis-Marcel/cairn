@@ -77,6 +77,16 @@ type Ledger struct {
 	// AccScope: the scope each account's cash belongs to (scope.go).
 	AccScope                 map[string]string
 	HasCrypto, HasSecurities bool
+	// whole: the ledger a scope's was projected from.
+	whole *Ledger
+}
+
+// Whole is the ledger before any scope's projection.
+func (l *Ledger) Whole() *Ledger {
+	if l.whole != nil {
+		return l.whole
+	}
+	return l
 }
 
 // Ledger loads the activities, again only when they changed.
@@ -175,6 +185,17 @@ type pricer struct {
 	s       *price.Service
 	late    atomic.Bool
 	memoize portfolio.Price
+	cash    *Money
+	cashOf  *Ledger
+}
+
+// money is the cash and flows of l's whole history, computed once.
+func (p *pricer) money(l *Ledger) *Money {
+	l = l.Whole()
+	if p.cash == nil || p.cashOf != l {
+		p.cash, p.cashOf = l.money(p.memoize), l
+	}
+	return p.cash
 }
 
 // pricer prices with the public markets; a security they do not know is
@@ -284,6 +305,8 @@ func (e *Engine) Portfolio(ctx context.Context, scope string) ([]byte, error) {
 		l = p.scoped(l, scope)
 		at := e.Now()
 		s := portfolio.Now(l.Acts, l.Pairs, p.memoize, at)
+		cashList, cash, flows := p.money(l).Now(scope, p.memoize, at)
+		value := s.Value.Add(cash)
 		type heldIn struct {
 			ID   string `json:"id"`
 			Name string `json:"name"`
@@ -307,23 +330,54 @@ func (e *Engine) Portfolio(ctx context.Context, scope string) ([]byte, error) {
 		}
 		out := []held{}
 		for _, h := range s.Assets {
+			share := decimal.Zero
+			if value.IsPositive() {
+				share = h.Value.Div(value)
+			}
 			v := held{h.Asset, h.Qty.String(), unitPrice(h.Price), money(h.Value), money(h.Cost), money(h.Unrealized),
-				h.Share.StringFixed(3), []heldIn{}, AssetID(h.Asset), Class(h.Asset)}
+				share.StringFixed(3), []heldIn{}, AssetID(h.Asset), Class(h.Asset)}
 			for _, q := range h.Sources {
 				v.Sources = append(v.Sources, heldIn{q.Source, l.ref(q.Source).Name, q.Amount.String()})
 			}
 			out = append(out, v)
 		}
-		by := []worth{}
+		// Each account's worth, its cash included.
+		bySource := map[string]decimal.Decimal{}
 		for _, w := range s.Sources {
-			by = append(by, worth{l.ref(w.Source), money(w.Amount)})
+			bySource[w.Source] = bySource[w.Source].Add(w.Amount)
 		}
+		type cashIn struct {
+			Ref
+			Asset model.Asset `json:"asset"`
+			Qty   string      `json:"qty"`
+			Value string      `json:"value"`
+		}
+		cashOut := []cashIn{}
+		for _, c := range cashList {
+			bySource[c.Acc] = bySource[c.Acc].Add(c.Value)
+			cashOut = append(cashOut, cashIn{l.ref(c.Acc), c.Cur, c.Qty.StringFixed(2), money(c.Value)})
+		}
+		by := []worth{}
+		for src, v := range bySource {
+			if v.IsPositive() {
+				by = append(by, worth{l.ref(src), money(v)})
+			}
+		}
+		sort.Slice(by, func(i, j int) bool {
+			a, _ := decimal.NewFromString(by[i].Value)
+			b, _ := decimal.NewFromString(by[j].Value)
+			if c := a.Cmp(b); c != 0 {
+				return c > 0
+			}
+			return by[i].Name+by[i].ID < by[j].Name+by[j].ID
+		})
 		return map[string]any{
 			"currency": Currency,
 			"at":       at,
-			"total": map[string]string{"value": money(s.Value), "invested": money(s.Invested), "cost": money(s.Cost),
-				"unrealized": money(s.Unrealized), "realized": money(s.Realized), "rewards": money(s.Rewards)},
+			"total": map[string]string{"value": money(value), "invested": money(flows.Invested()), "cost": money(s.Cost),
+				"unrealized": money(s.Unrealized), "realized": money(s.Realized), "rewards": money(s.Rewards), "cash": money(cash)},
 			"assets":   out,
+			"cash":     cashOut,
 			"sources":  by,
 			"unpriced": assets(s.Unpriced),
 		}, nil
@@ -359,9 +413,13 @@ func (e *Engine) History(ctx context.Context, from, to, step, scope string) ([]b
 	return e.cached(ctx, "history?"+from+"&"+to+"&"+step+"&"+scope, func(l *Ledger, p *pricer) (any, error) {
 		l = p.scoped(l, scope)
 		today := e.Now().Truncate(24 * time.Hour)
+		m := p.money(l)
 		start, end := f, t
 		if start.IsZero() {
 			start = portfolio.First(l.Acts)
+			if first := m.First(scope); !first.IsZero() && (start.IsZero() || first.Before(start)) {
+				start = first
+			}
 		}
 		if end.IsZero() || end.After(today) {
 			end = today
@@ -379,9 +437,10 @@ func (e *Engine) History(ctx context.Context, from, to, step, scope string) ([]b
 			return nil, &Error{422, "plus de 3700 points : step=week ou month"}
 		}
 		points, unpriced := portfolio.History(l.Acts, l.Pairs, p.memoize, days)
+		cash := m.Days(scope, p.memoize, days)
 		out := make([]point, 0, len(points))
-		for _, pt := range points {
-			out = append(out, point{pt.Day.Format(time.DateOnly), money(pt.Value), money(pt.Invested)})
+		for n, pt := range points {
+			out = append(out, point{pt.Day.Format(time.DateOnly), money(pt.Value.Add(cash[n].Cash)), money(cash[n].Invested)})
 		}
 		return map[string]any{"currency": Currency, "points": out, "unpriced": assets(unpriced)}, nil
 	})
