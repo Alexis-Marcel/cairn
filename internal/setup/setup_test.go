@@ -104,10 +104,11 @@ func TestSaveLoad(t *testing.T) {
 
 func TestNormalize(t *testing.T) {
 	for in, want := range map[string]string{
-		" http://fundarr:9494/ ":   "http://fundarr:9494",
-		"fundarr:9494":             "http://fundarr:9494",
-		"https://f.example.com/x/": "https://f.example.com/x",
-		"":                         "",
+		" http://fundarr:9494/ ":        "http://fundarr:9494",
+		"fundarr:9494":                  "http://fundarr:9494",
+		"https://f.example.com/x/":      "https://f.example.com/x",
+		"https://f.example.com/api/v1/": "https://f.example.com",
+		"":                              "",
 	} {
 		if got := Normalize(in); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)

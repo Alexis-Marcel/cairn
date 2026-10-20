@@ -210,10 +210,12 @@ func (s *Setup) delete(w http.ResponseWriter) {
 	json.NewEncoder(w).Encode(state{})
 }
 
-// Normalize trims an address as typed: spaces, the final slash, and adds
-// http:// when no scheme is given ("fundarr:9494").
+// Normalize trims an address as typed: spaces, the final slash, the API
+// path Fundarr's Apps page shows (/api/v1), and adds http:// when no scheme
+// is given ("fundarr:9494").
 func Normalize(u string) string {
 	u = strings.TrimRight(strings.TrimSpace(u), "/")
+	u = strings.TrimRight(strings.TrimSuffix(u, "/api/v1"), "/")
 	if u != "" && !strings.Contains(u, "://") {
 		u = "http://" + u
 	}
