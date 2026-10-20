@@ -1,9 +1,9 @@
-// Cairn: where my crypto stands, read from Fundarr.
+// Cairn: where my crypto stands, and the French 2086 form.
 //
-// One binary: it serves the UI and forwards the UI's reads to Fundarr's read
-// API with the token, which stays on the server. The token comes from the
-// environment or from the first-run page, saved in CAIRN_DATA. There is no
-// sign-in: put it behind a reverse proxy that does it.
+// One binary: it serves the UI and its API, keeps the activities in SQLite
+// (CAIRN_DATA/cairn.db) and works the portfolio out itself. They are entered
+// by hand, imported from a CSV, or copied from a Fundarr (optional). There
+// is no sign-in: put it behind a reverse proxy that does it.
 package main
 
 import (
@@ -19,8 +19,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Alexis-Marcel/cairn/internal/setup"
+	"github.com/Alexis-Marcel/cairn/internal/books"
+	"github.com/Alexis-Marcel/cairn/internal/fundarr"
+	"github.com/Alexis-Marcel/cairn/internal/server"
+	"github.com/Alexis-Marcel/cairn/internal/store"
 	"github.com/Alexis-Marcel/cairn/web"
+	"github.com/Alexis-Marcel/fundarr/pkg/price"
 )
 
 var version = "dev"
@@ -57,72 +61,71 @@ func run(log *slog.Logger) error {
 		return fmt.Errorf("CAIRN_CACHE: %w", err)
 	}
 	data := env("CAIRN_DATA", "/data")
-	s, err := setup.New(data, setup.Conn{URL: env("FUNDARR_URL", ""), Token: env("FUNDARR_TOKEN", "")}, ttl)
+	st, err := store.Open(data)
 	if err != nil {
-		return err
+		return fmt.Errorf("database in %s: %w", data, err)
 	}
+	defer st.Close()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if moved, err := st.MigrateLegacy(ctx, data); err != nil {
+		log.Warn("cairn.json not migrated", "err", err)
+	} else if moved {
+		log.Info("link to Fundarr moved from cairn.json into the database")
+	}
+	fromEnv := false
+	if u, t := env("FUNDARR_URL", ""), env("FUNDARR_TOKEN", ""); u != "" || t != "" {
+		if u == "" {
+			u = "http://localhost:9494"
+		}
+		u = fundarr.Normalize(u)
+		if !fundarr.ValidURL(u) {
+			return fmt.Errorf("FUNDARR_URL: %q is not an http(s) address", u)
+		}
+		if err := st.SetLink(ctx, u, t); err != nil {
+			return err
+		}
+		fromEnv = true
+	}
+	if s := env("FUNDARR_NOTIFY_SECRET", ""); s != "" {
+		if err := st.SetSecret(ctx, s); err != nil {
+			return err
+		}
+	}
+
+	prices := price.New(st, &http.Client{Timeout: 30 * time.Second})
+	engine := books.New(st, prices)
+	engine.TTL = ttl
+	syncer := fundarr.New(st, log)
+	syncer.After = func() { engine.Warm(ctx) }
+
 	dist, err := fs.Sub(web.Dist, "dist")
 	if err != nil {
 		return err
 	}
-
-	mux := http.NewServeMux()
-	mux.Handle("/api/setup", s)
-	mux.Handle("/api/", s.API())
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("ok"))
-	})
-	mux.Handle("/", spa(dist))
-
-	srv := &http.Server{Addr: addr, Handler: secure(mux), ReadHeaderTimeout: 10 * time.Second}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	srv := &server.Server{St: st, Books: engine, Sync: syncer, FromEnv: fromEnv, Log: log}
+	hs := &http.Server{Addr: addr, Handler: srv.Handler(dist), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shut, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		srv.Shutdown(shut)
+		hs.Shutdown(shut)
 	}()
-	fundarr, fromEnv := s.Linked()
-	if fundarr == "" {
-		fundarr = "(not linked yet: open Cairn)"
+	go syncer.Run(ctx)
+	go engine.Warm(ctx)
+
+	l, _ := st.Link(ctx)
+	linked := l.URL
+	if linked == "" {
+		linked = "(none)"
 	}
-	log.Info("cairn", "version", version, "addr", addr, "data", data, "fundarr", fundarr, "fromEnv", fromEnv)
-	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+	log.Info("cairn", "version", version, "addr", addr, "data", data, "fundarr", linked, "fromEnv", fromEnv)
+	if err := hs.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
-}
-
-// spa serves the built files, and index.html for any other path (the UI
-// routes on its own). Hashed assets are kept for good, the page never.
-func spa(dist fs.FS) http.Handler {
-	files := http.FileServerFS(dist)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name := strings.TrimPrefix(r.URL.Path, "/")
-		if name != "" {
-			if st, err := fs.Stat(dist, name); err == nil && !st.IsDir() {
-				if strings.HasPrefix(name, "assets/") {
-					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-				}
-				files.ServeHTTP(w, r)
-				return
-			}
-		}
-		w.Header().Set("Cache-Control", "no-cache")
-		http.ServeFileFS(w, r, dist, "index.html")
-	})
-}
-
-// secure adds the headers every answer should carry.
-func secure(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'")
-		h.ServeHTTP(w, r)
-	})
 }
 
 // health is the container healthcheck (the image has no shell or curl).
