@@ -396,9 +396,10 @@ p {
 .loading.small {
   padding: 8px 0;
 }
+/* Dimmed only when the next answer is slow to come. */
 .stale {
   opacity: 0.55;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s 0.3s;
 }
 
 .skel {
@@ -486,6 +487,22 @@ p {
   letter-spacing: 0;
   color: var(--muted);
   min-height: 1.5em;
+}
+/* The scope switch takes the label's place; a scrubbed day sits beside it. */
+.hero-scope {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 34px;
+  margin-left: -3px;
+}
+.hero-date {
+  animation: fade-in 0.18s ease-out;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
 }
 .hero-value {
   font-size: var(--t-hero);
@@ -846,7 +863,7 @@ p {
 }
 .coin-list a {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 76px auto;
+  grid-template-columns: 40px minmax(0, 1fr) 76px minmax(9.5em, auto);
   align-items: center;
   gap: 14px;
   padding: 11px 10px;
@@ -1231,7 +1248,7 @@ p {
 }
 .rank button {
   display: grid;
-  grid-template-columns: 11em minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1.15fr) minmax(56px, 1fr) auto;
   align-items: center;
   gap: 14px;
   width: 100%;
@@ -1256,10 +1273,15 @@ p {
   min-width: 0;
   font-weight: 560;
 }
+/* Long names of funds wrap once, then end in an ellipsis. */
 .rank-label {
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 .rank-name .coin {
   width: 20px;
@@ -1331,6 +1353,9 @@ p {
   padding: 36px 0 20px;
 }
 .page-head .actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
 }
 
@@ -1522,20 +1547,21 @@ p {
   display: grid;
   min-width: 0;
 }
+/* What happened, then to what: a long fund name wraps once. */
 .op-title-line {
   font-weight: 560;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.35;
   min-width: 0;
 }
 .op-sym {
   font-weight: 400;
   color: var(--muted);
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  margin-left: 0.3em;
 }
 .op-sub {
   font-size: var(--t-s);
@@ -1820,6 +1846,9 @@ td.left {
   .figures dd {
     font-size: var(--t-l);
   }
+  .figures.position {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .figures.position > div:nth-child(n) {
     border-top: 0;
   }
@@ -1836,6 +1865,36 @@ td.left {
   }
   .coin-list a {
     grid-template-columns: 40px minmax(0, 1fr) auto;
+  }
+  .coin-name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    line-height: 1.3;
+  }
+  .filters .pick {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .filters .pick select {
+    width: 100%;
+  }
+  .filters .search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .seg.scope button {
+    min-height: 34px;
+    padding: 5px 13px;
+  }
+  .narrow-icon {
+    width: 40px;
+    padding: 0;
+  }
+  .narrow-icon .btn-label {
+    display: none;
   }
   .coin-spark {
     display: none;
@@ -1879,6 +1938,7 @@ td.left {
 
 @media (prefers-reduced-motion: reduce) {
   .skel,
+  .hero-date,
   .slow-bar::after {
     animation: none;
   }
@@ -1996,9 +2056,19 @@ td.left {
   margin-top: 24px;
 }
 
+.notes-more {
+  margin-top: 40px;
+  font-size: var(--t-s);
+}
+.notes-more .notes {
+  margin-top: 12px;
+}
+.notes.warn {
+  color: var(--ochre);
+}
 .notes {
   list-style: none;
-  margin: 48px 0 0;
+  margin: 40px 0 0;
   padding: 0;
   max-width: 68ch;
   font-size: var(--t-xs);
@@ -2732,9 +2802,61 @@ details summary::marker {
 .settings h2 {
   margin-bottom: 16px;
 }
-.sync-line {
+/* The link to Fundarr: its state, its address, the one action that matters. */
+.link-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--sunk);
+  margin-bottom: 12px;
+}
+.link-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--moss);
+}
+.link-dot.down {
+  background: var(--garnet);
+}
+.link-dot.busy {
+  background: var(--stone);
+  animation: pulse 1s ease-in-out infinite alternate;
+}
+@keyframes pulse {
+  to {
+    opacity: 0.35;
+  }
+}
+.link-text p {
+  margin: 0;
+  font-weight: 500;
+}
+.link-text p.down {
+  color: var(--garnet);
+}
+.link-text .link-url {
   font-size: var(--t-s);
-  margin: -8px 0 16px;
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-state .btn {
+  background: var(--raised);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.link-actions {
+  margin: 0 0 0 -8px;
+  gap: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .link-dot.busy {
+    animation: none;
+  }
 }
 .notify {
   margin-top: 24px;

@@ -180,7 +180,13 @@ export interface SyncState {
 export interface Status {
   activities: number;
   sync: SyncState;
+  /** The history holds crypto and securities: the scopes say something. */
+  scopes: boolean;
 }
+
+/** What the figures cover: everything, crypto alone, stocks and ETFs alone. */
+export type Scope = "all" | "crypto" | "securities";
+export const SCOPES = ["all", "crypto", "securities"] as const;
 
 export interface Account {
   id: string;
