@@ -21,6 +21,8 @@ const (
 	Deposit    = "deposit"    // euros (or coins) arriving from outside
 	Withdrawal = "withdrawal" // euros (or coins) leaving
 	Reward     = "reward"     // staking, airdrop
+	Dividend   = "dividend"   // cash paid by a stock or an ETF
+	Interest   = "interest"   // cash interest
 	Transfer   = "transfer"   // coins moved between two of your accounts
 	Fee        = "fee"        // a charge on its own
 	Correction = "correction" // Fundarr's balance check (read-only)
@@ -35,8 +37,9 @@ type Entry struct {
 	NewAccount  string `json:"newAccount,omitempty"` // made on the way
 	To          string `json:"to,omitempty"`         // transfer: the receiving account
 	NewTo       string `json:"newTo,omitempty"`
-	Asset       string `json:"asset"`
-	Qty         string `json:"qty"`
+	Asset       string `json:"asset"`                 // a symbol, or a security's ISIN
+	Name        string `json:"name,omitempty"`        // a security's name
+	Qty         string `json:"qty"`                   // dividend, interest: the euros received
 	Total       string `json:"total,omitempty"`       // buy, sell: euros paid or received
 	Fee         string `json:"fee,omitempty"`         // euros; a transfer's network fee is in its coin
 	Received    string `json:"received,omitempty"`    // swap: the coin received
@@ -48,7 +51,8 @@ var eur = model.Asset{Kind: model.Fiat, Symbol: "EUR"}
 
 var symbolRe = regexp.MustCompile(`^[A-Z0-9][A-Z0-9.]{0,19}$`)
 
-// Asset reads a symbol: "btc" → crypto BTC, "EUR" → fiat.
+// Asset reads a symbol: "btc" → crypto BTC, "EUR" → fiat, an ISIN
+// ("IE00B4L5Y983") → that stock or ETF.
 func Asset(sym string) (model.Asset, error) {
 	s := strings.ToUpper(strings.TrimSpace(sym))
 	if !symbolRe.MatchString(s) {
@@ -57,7 +61,44 @@ func Asset(sym string) (model.Asset, error) {
 		}
 		return model.Asset{}, errors.New("Actif invalide : " + sym)
 	}
+	if isinRe.MatchString(s) {
+		if !ValidISIN(s) {
+			return model.Asset{}, errors.New("ISIN invalide : " + s)
+		}
+		return model.Asset{Kind: model.Security, Symbol: s, ISIN: s}, nil
+	}
 	return model.CryptoOrFiat(s), nil
+}
+
+var isinRe = regexp.MustCompile(`^[A-Z]{2}[A-Z0-9]{9}[0-9]$`)
+
+// ValidISIN checks an ISIN's form and its check digit.
+func ValidISIN(s string) bool {
+	if !isinRe.MatchString(s) {
+		return false
+	}
+	// Letters become two digits (A = 10), then Luhn over the digits.
+	var digits []int
+	for _, r := range s[:11] {
+		if r >= 'A' && r <= 'Z' {
+			n := int(r-'A') + 10
+			digits = append(digits, n/10, n%10)
+		} else {
+			digits = append(digits, int(r-'0'))
+		}
+	}
+	sum := 0
+	for i := len(digits) - 1; i >= 0; i-- {
+		d := digits[i]
+		if (len(digits)-1-i)%2 == 0 {
+			d *= 2
+			if d > 9 {
+				d -= 9
+			}
+		}
+		sum += d
+	}
+	return (10-sum%10)%10 == int(s[11]-'0')
 }
 
 // Decimal reads a number as people type it: "1 234,56", "0.01", "1,234.5".
@@ -116,7 +157,7 @@ func (e Entry) Build(at time.Time, account, to string) ([]model.Activity, error)
 	}
 	act := model.Activity{SourceID: account, Time: at.UTC(), Note: note}
 	asset := eur
-	if strings.TrimSpace(e.Asset) != "" || (e.Kind != Deposit && e.Kind != Withdrawal) {
+	if strings.TrimSpace(e.Asset) != "" || (e.Kind != Deposit && e.Kind != Withdrawal && e.Kind != Interest) {
 		a, err := Asset(e.Asset)
 		if err != nil {
 			return nil, err
@@ -127,10 +168,23 @@ func (e Entry) Build(at time.Time, account, to string) ([]model.Activity, error)
 	if err != nil {
 		return nil, err
 	}
+	if asset.Kind == model.Security {
+		name := strings.Join(strings.Fields(e.Name), " ")
+		if r := []rune(name); len(r) > 80 {
+			name = string(r[:80])
+		}
+		asset.Name = name
+	}
 	act.Base = model.Amount{Asset: asset, Qty: qty}
 	crypto := func() error {
 		if asset.Kind != model.Crypto {
 			return errors.New("Choisis une crypto, pas " + asset.Symbol)
+		}
+		return nil
+	}
+	held := func() error {
+		if asset.Kind != model.Crypto && asset.Kind != model.Security {
+			return errors.New("Choisis une crypto ou un titre, pas " + asset.Symbol)
 		}
 		return nil
 	}
@@ -146,7 +200,7 @@ func (e Entry) Build(at time.Time, account, to string) ([]model.Activity, error)
 	}
 	switch e.Kind {
 	case Buy, Sell:
-		if err := crypto(); err != nil {
+		if err := held(); err != nil {
 			return nil, err
 		}
 		total, err := positive(e.Total, "Prix")
@@ -189,14 +243,25 @@ func (e Entry) Build(at time.Time, account, to string) ([]model.Activity, error)
 	case Withdrawal:
 		act.Type = model.Withdrawal
 	case Reward:
-		if err := crypto(); err != nil {
+		if err := held(); err != nil {
 			return nil, err
 		}
 		act.Type = model.Reward
+	case Dividend:
+		if asset.Kind != model.Security {
+			return nil, errors.New("Un dividende vient d'une action ou d'un ETF : son ISIN")
+		}
+		act.Type = model.Dividend
+		act.Base, act.Quote = model.Amount{Asset: eur, Qty: qty}, &model.Amount{Asset: asset, Qty: decimal.Zero}
+	case Interest:
+		if asset.Kind != model.Fiat {
+			return nil, errors.New("Des intérêts se comptent en euros")
+		}
+		act.Type = model.Interest
 	case Fee:
 		act.Type = model.Fee
 	case Transfer:
-		if err := crypto(); err != nil {
+		if err := held(); err != nil {
 			return nil, err
 		}
 		if to == "" && account != "" {
@@ -250,7 +315,14 @@ func Kind(a model.Activity, paired bool) string {
 			return Deposit
 		}
 		return Withdrawal
-	case model.Reward, model.Interest, model.Dividend:
+	case model.Dividend:
+		return Dividend
+	case model.Interest:
+		if a.Base.Asset.Kind == model.Fiat {
+			return Interest
+		}
+		return Reward
+	case model.Reward:
 		return Reward
 	case model.Fee, model.Tax:
 		return Fee

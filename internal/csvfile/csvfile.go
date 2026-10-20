@@ -2,10 +2,13 @@
 // (GET /api/v1/activities.csv?format=fundarr) or Cairn's own simple format,
 // one operation per row:
 //
-//	date,type,actif,quantite,prix,frais,recu,quantite_recue,compte,note
-//	2024-03-01,achat,BTC,0.01,550,1.5,,,Binance,
-//	2024-05-10,echange,BTC,0.005,,,ETH,0.08,Binance,
+//	date,type,actif,quantite,prix,frais,recu,quantite_recue,compte,note,isin,nom
+//	2024-03-01,achat,BTC,0.01,550,1.5,,,Binance,,,
+//	2024-05-10,echange,BTC,0.005,,,ETH,0.08,Binance,,,
+//	2024-07-01,achat,,3,300,1,,,Trade Republic,,IE00B4L5Y983,iShares Core MSCI World
 //
+// A stock or an ETF is named by its ISIN (in isin, or in actif), with its
+// name in nom.
 // Columns may come in any order, separated by commas or semicolons, with
 // decimal points or commas. Every row has an id that depends only on its
 // content, so importing the same file twice adds nothing the second time.
@@ -54,14 +57,16 @@ type File struct {
 }
 
 // Template is an example of Cairn's format, to fill in.
-const Template = "date,type,actif,quantite,prix,frais,recu,quantite_recue,compte,note\r\n" +
-	"2024-03-01,achat,BTC,0.01,550,1.5,,,Binance,\r\n" +
-	"2024-04-02,depot,EUR,500,,,,,Binance,virement\r\n" +
-	"2024-05-10,echange,BTC,0.005,,,ETH,0.08,Binance,\r\n" +
-	"2024-06-15,recompense,ETH,0.002,,,,,Binance,staking\r\n" +
-	"2024-09-20,vente,ETH,0.05,120,0.5,,,Binance,\r\n" +
-	"2024-10-01,frais,ETH,0.001,,,,,Binance,frais de garde\r\n" +
-	"2024-11-05,retrait,BTC,0.002,,,,,Binance,envoyé à un ami\r\n"
+const Template = "date,type,actif,quantite,prix,frais,recu,quantite_recue,compte,note,isin,nom\r\n" +
+	"2024-03-01,achat,BTC,0.01,550,1.5,,,Binance,,,\r\n" +
+	"2024-04-02,depot,EUR,500,,,,,Binance,virement,,\r\n" +
+	"2024-05-10,echange,BTC,0.005,,,ETH,0.08,Binance,,,\r\n" +
+	"2024-06-15,recompense,ETH,0.002,,,,,Binance,staking,,\r\n" +
+	"2024-07-01,achat,,3,300,1,,,Trade Republic,,IE00B4L5Y983,iShares Core MSCI World\r\n" +
+	"2024-09-20,vente,ETH,0.05,120,0.5,,,Binance,,,\r\n" +
+	"2024-10-01,frais,ETH,0.001,,,,,Binance,frais de garde,,\r\n" +
+	"2024-11-05,retrait,BTC,0.002,,,,,Binance,envoyé à un ami,,\r\n" +
+	"2024-12-10,dividende,,,4.2,,,,Trade Republic,,IE00B4L5Y983,\r\n"
 
 // fold lowers a header and drops its accents and spaces: "Quantité reçue" →
 // "quantite_recue".
@@ -102,7 +107,7 @@ func Read(r io.Reader) (*File, error) {
 	switch {
 	case has(col, "id", "source", "time", "type", "qty", "asset"):
 		f.Format, parse = Fundarr, fundarrRow
-	case has(col, "date", "type") && (has(col, "actif") || has(col, "asset")):
+	case has(col, "date", "type") && (has(col, "actif") || has(col, "asset") || has(col, "isin")):
 		f.Format, parse = Cairn, cairnRow
 	default:
 		return nil, errors.New("Colonnes inconnues : utilise le modèle de Cairn ou l'export de Fundarr")
@@ -207,6 +212,9 @@ func fundarrRow(get func(string) string) (store.Activity, string, error) {
 			return nil, fmt.Errorf("Quantité illisible : %s", qty)
 		}
 		as := model.CryptoOrFiat(sym)
+		if isin == "" && entry.ValidISIN(as.Symbol) {
+			isin = as.Symbol // a dividend's security, a fee in shares
+		}
 		if isin != "" {
 			as = model.Asset{Kind: model.Security, Symbol: as.Symbol, ISIN: isin}
 		}
@@ -249,6 +257,8 @@ var kinds = map[string]string{
 	"retrait": "withdrawal", "withdrawal": "withdrawal",
 	"recompense": "reward", "reward": "reward", "staking": "reward", "airdrop": "reward",
 	"frais": "fee", "fee": "fee",
+	"dividende": "dividend", "dividend": "dividend", "distribution": "dividend",
+	"interets": "interest", "interet": "interest", "interest": "interest",
 }
 
 // Date reads a day or a moment: 2024-03-01, 01/03/2024, RFC 3339. A day is
@@ -290,10 +300,14 @@ func cairnRow(get func(string) string) (store.Activity, string, error) {
 	if kind == "" {
 		return a, account, fmt.Errorf("Type inconnu : %s", get("type"))
 	}
-	e := entry.Entry{Kind: kind, Asset: pick("actif", "asset"), Qty: pick("quantite", "qty", "quantity"),
-		Total: pick("prix", "prix_total", "total", "montant", "price"), Fee: pick("frais", "fee", "fees"),
-		Received: pick("recu", "actif_recu", "received"), ReceivedQty: pick("quantite_recue", "received_qty"),
-		Note: pick("note")}
+	e := entry.Entry{Kind: kind, Asset: pick("isin", "actif", "asset"), Name: pick("nom", "name", "libelle"),
+		Qty: pick("quantite", "qty", "quantity"), Total: pick("prix", "prix_total", "total", "montant", "price"),
+		Fee: pick("frais", "fee", "fees"), Received: pick("recu", "actif_recu", "received"),
+		ReceivedQty: pick("quantite_recue", "received_qty"), Note: pick("note")}
+	if (kind == entry.Dividend || kind == entry.Interest) && e.Qty == "" {
+		// Euros received: in the price column, as a sale's.
+		e.Qty = e.Total
+	}
 	acts, err := e.Build(t, "", "")
 	if err != nil {
 		return a, account, err

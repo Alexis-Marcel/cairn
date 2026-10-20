@@ -104,6 +104,9 @@ type peerView struct {
 }
 
 func (s *Server) view(ctx context.Context, l *books.Ledger, a store.Activity) opView {
+	if named, ok := l.ByID[a.ID]; ok {
+		a = named // assets with their names
+	}
 	acc := l.Accounts[a.SourceID]
 	v := opView{ID: a.ID, Origin: a.Origin, Type: a.Type, Time: a.Time, Account: books.Ref{ID: acc.ID, Name: acc.Name, Kind: acc.Origin},
 		Side: a.Side, Base: a.Base, Quote: a.Quote, Fee: a.Fee, Note: a.Note, Editable: a.Origin != store.Fundarr}
@@ -126,15 +129,21 @@ func (s *Server) listOps(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	f := store.Filter{Account: q.Get("account"), Asset: q.Get("asset"), Origin: q.Get("origin"), Query: q.Get("q"),
 		Offset: offset, Limit: limit}
-	if f.Limit <= 0 || f.Limit > 200 {
-		f.Limit = 50
-	}
-	list, total, err := s.St.List(r.Context(), f)
+	l, err := s.Books.Ledger(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	l, err := s.Books.Ledger(r.Context())
+	if f.Asset != "" {
+		// A security is asked by its ISIN; its activities may keep a ticker.
+		if a, ok := l.Find(f.Asset); ok {
+			f.Asset = a.Symbol
+		}
+	}
+	if f.Limit <= 0 || f.Limit > 200 {
+		f.Limit = 50
+	}
+	list, total, err := s.St.List(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -444,13 +453,39 @@ func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) {
 
 // ---- assets and prices
 
+// assetRef is an asset the activities use, for pickers and filters.
+type assetRef struct {
+	ID     string          `json:"id"` // ISIN or symbol: what links and filters take
+	Symbol string          `json:"symbol"`
+	Kind   model.AssetKind `json:"kind"`
+	Name   string          `json:"name,omitempty"`
+	Class  string          `json:"class"`
+}
+
+// assets lists the assets used, most used first, with their names.
 func (s *Server) assets(w http.ResponseWriter, r *http.Request) {
 	list, err := s.St.Assets(r.Context())
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, list)
+	l, err := s.Books.Ledger(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out := make([]assetRef, 0, len(list))
+	for _, sym := range list {
+		a, ok := l.Find(sym)
+		if !ok {
+			a, _ = entry.Asset(sym)
+			if a.Symbol == "" {
+				continue
+			}
+		}
+		out = append(out, assetRef{books.AssetID(a), a.Symbol, a.Kind, a.Name, books.Class(a)})
+	}
+	writeJSON(w, 200, out)
 }
 
 // price: GET /api/price?asset=BTC&date=2024-03-01, one unit in euros.

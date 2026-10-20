@@ -235,19 +235,19 @@ func TestImport(t *testing.T) {
 		Accounts                  []string
 	}
 	in := map[string]any{"csv": csvfile.Template}
-	if c.do("POST", "/api/import/preview", in, &p) != 200 || p.Valid != 7 || !p.FileAccounts || p.Accounts[0] != "Binance" {
+	if c.do("POST", "/api/import/preview", in, &p) != 200 || p.Valid != 9 || !p.FileAccounts || p.Accounts[0] != "Binance" {
 		t.Fatalf("preview: %+v", p)
 	}
 	var r struct{ Added, Skipped, Errors int }
-	if c.do("POST", "/api/import", map[string]any{"csv": csvfile.Template, "newAccount": "Kraken"}, &r) != 200 || r.Added != 7 {
+	if c.do("POST", "/api/import", map[string]any{"csv": csvfile.Template, "newAccount": "Kraken"}, &r) != 200 || r.Added != 9 {
 		t.Fatalf("import: %+v", r)
 	}
 	c.do("POST", "/api/import", map[string]any{"csv": csvfile.Template, "fromFile": true}, &r)
-	if r.Added != 0 || r.Skipped != 7 {
+	if r.Added != 0 || r.Skipped != 9 {
 		t.Fatalf("again: %+v", r)
 	}
 	c.do("POST", "/api/import/preview", in, &p)
-	if p.Duplicates != 7 || p.Valid != 0 {
+	if p.Duplicates != 9 || p.Valid != 0 {
 		t.Fatalf("preview again: %+v", p)
 	}
 	var e struct{ Error string }
