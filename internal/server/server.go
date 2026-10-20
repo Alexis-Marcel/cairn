@@ -77,6 +77,7 @@ func (s *Server) Handler(dist fs.FS) http.Handler {
 	api.HandleFunc("POST /api/sync", s.link)
 	api.HandleFunc("DELETE /api/sync", s.unlink)
 	api.HandleFunc("POST /api/sync/now", s.syncNow)
+	api.HandleFunc("GET /api/sync/find", s.findFundarr)
 	api.HandleFunc("PUT /api/sync/secret", s.setSecret)
 
 	api.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
