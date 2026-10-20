@@ -90,12 +90,14 @@ const accountOf = (c: AccountChoice) => (c.name !== undefined ? { newAccount: c.
 
 export function OpForm({
   op,
+  asset,
   accounts,
   used,
   onSaved,
   onCancel,
 }: {
   op?: Op;
+  asset?: string;
   accounts: Account[];
   used: AssetRef[];
   onSaved: () => void;
@@ -103,6 +105,7 @@ export function OpForm({
 }) {
   const id = useId();
   const first = accounts.find((a) => a.origin === "manual") ?? accounts[0];
+  const preset = asset ? used.find((a) => a.id === asset) : undefined;
   const [s, setS] = useState<State>(() =>
     op
       ? fromOp(op)
@@ -111,8 +114,8 @@ export function OpForm({
           date: today(),
           account: first ? { id: first.id } : { name: "" },
           to: {},
-          asset: "",
-          name: "",
+          asset: preset?.id ?? "",
+          name: preset?.name ?? "",
           qty: "",
           total: "",
           fee: "",
