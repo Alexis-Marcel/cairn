@@ -3,7 +3,7 @@
 // then the statistics.
 
 import { useMemo, useState } from "react";
-import { get, useLoad, type CoinStat, type Overview, type PeriodKey, type Portfolio, type Stats, type TaxFR } from "../api";
+import { get, useLoad, type CoinStat, type Overview, type PeriodKey, type Portfolio, type Scope, type Stats, type TaxFR } from "../api";
 import { Allocation } from "../components/Allocation";
 import { Coin } from "../components/Coin";
 import { Heatmap } from "../components/Heatmap";
@@ -11,6 +11,7 @@ import { LineChart } from "../components/LineChart";
 import { MonthBars } from "../components/MonthBars";
 import { Num, useTween } from "../components/Num";
 import { Ranking } from "../components/Ranking";
+import { ScopeSwitch } from "../components/ScopeSwitch";
 import { Segmented } from "../components/Segmented";
 import { Spark } from "../components/Spark";
 import { SplitArea } from "../components/SplitArea";
@@ -71,10 +72,17 @@ export function BigEuros({ value, instant }: { value: number; instant?: boolean 
   );
 }
 
-export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
-  const ov = useLoad("overview" + rev, (s) => get<Overview>("overview", s));
-  const pf = useLoad("portfolio" + rev, (s) => get<Portfolio>("portfolio", s));
-  const st = useLoad("stats" + rev, (s) => get<Stats>("stats", s));
+/** The scope figures cover, and how to change it when there is a choice. */
+export interface Scoped {
+  scope: Scope;
+  onScope?: (s: Scope) => void;
+}
+
+export function Home({ rev, go, scope, onScope }: { rev: number; go: (path: string) => void } & Scoped) {
+  const q = "?scope=" + scope;
+  const ov = useLoad("overview" + q + rev, (s) => get<Overview>("overview" + q, s));
+  const pf = useLoad("portfolio" + q + rev, (s) => get<Portfolio>("portfolio" + q, s));
+  const st = useLoad("stats" + q + rev, (s) => get<Stats>("stats" + q, s));
   const lastYear = new Date().getFullYear() - 1;
   const tax = useLoad(ov.data ? "tax" + rev : null, (s) => get<TaxFR>(`tax/fr?year=${lastYear}`, s));
 
@@ -105,6 +113,13 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
     };
   }, [o, per]);
 
+  // A new scope: the cursor and its figures start over.
+  const [lastScope, setLastScope] = useState(scope);
+  if (lastScope !== scope) {
+    setLastScope(scope);
+    setScrub(null);
+  }
+
   if (ov.error && !o) return <Failed error={ov.error} retry={ov.reload} />;
   if (!o || !per || !series) return <HomeSkeleton />;
 
@@ -124,9 +139,19 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
   return (
     <div className="home">
       <section className="hero" aria-labelledby="h-value">
-        <h1 id="h-value" className="hero-when">
-          {at ? day(utc(at.d)) : "Portefeuille"}
-        </h1>
+        {onScope ? (
+          <div className="hero-when hero-scope">
+            <h1 id="h-value" className="sr">
+              Portefeuille
+            </h1>
+            <ScopeSwitch scope={scope} onChange={onScope} />
+            {at && <span className="hero-date">{day(utc(at.d))}</span>}
+          </div>
+        ) : (
+          <h1 id="h-value" className="hero-when">
+            {at ? day(utc(at.d)) : "Portefeuille"}
+          </h1>
+        )}
         <p className="hero-value num">
           <BigEuros value={at ? at.v : o.total.value} instant={!!at} />
         </p>
@@ -162,7 +187,7 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
           tone={per.gain >= 0 ? "up" : "down"}
           axis={view === "value" ? (v) => (v === 0 ? "0" : eurShort(v)) : (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(Math.round(v))} %`}
           height={320}
-          dataKey={period + view}
+          dataKey={period + view + scope}
           label={`${view === "value" ? "Valeur et apports" : "Performance"} ${SINCE[period]}. Flèches pour parcourir.`}
           scrub={scrub}
           onScrub={setScrub}
@@ -209,30 +234,40 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
         </div>
       </section>
 
-      <dl className="figures num" aria-label="Chiffres clés">
+      <dl className={`figures num${ov.loading ? " stale" : ""}`} aria-label="Chiffres clés">
         <div>
           <dt>Gain total</dt>
-          <dd className={tone(o.total.gain)}>{eur(o.total.gain, { sign: true })}</dd>
+          <dd className={tone(o.total.gain)}>
+            <Num value={o.total.gain} format={(v) => eur(v, { sign: true })} />
+          </dd>
           <dd className="figure-sub">{o.total.invested > 0 && pct(o.total.gain / o.total.invested, { sign: true }) + " des apports"}</dd>
         </div>
         <div>
           <dt>Rendement annuel</dt>
-          <dd className={o.total.xirr === null ? "" : tone(o.total.xirr)}>{o.total.xirr === null ? "–" : pct(o.total.xirr, { sign: true })}</dd>
+          <dd className={o.total.xirr === null ? "" : tone(o.total.xirr)}>
+            {o.total.xirr === null ? "–" : <Num value={o.total.xirr} format={(v) => pct(v, { sign: true })} />}
+          </dd>
           <dd className="figure-sub">selon tes apports</dd>
         </div>
         <div>
           <dt>Apports nets</dt>
-          <dd>{eur(o.total.invested)}</dd>
+          <dd>
+            <Num value={o.total.invested} format={(v) => eur(v)} />
+          </dd>
           <dd className="figure-sub">versés moins retirés</dd>
         </div>
         <div>
           <dt>Revenus</dt>
-          <dd>{eur(o.total.rewards + o.total.dividends + o.total.interest)}</dd>
+          <dd>
+            <Num value={o.total.rewards + o.total.dividends + o.total.interest} format={(v) => eur(v)} />
+          </dd>
           <dd className="figure-sub">{incomeParts(o.total)}</dd>
         </div>
         <div>
           <dt>Frais payés</dt>
-          <dd>{eur(o.total.fees)}</dd>
+          <dd>
+            <Num value={o.total.fees} format={(v) => eur(v)} />
+          </dd>
           <dd className="figure-sub">{o.total.invested > 0 && pct(o.total.fees / o.total.invested) + " des apports"}</dd>
         </div>
       </dl>
@@ -303,7 +338,7 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
             )}
           </section>
 
-          {tax.data && tax.data.disposals.length > 0 && (
+          {scope !== "securities" && tax.data && tax.data.disposals.length > 0 && (
             <a
               href="/impots"
               className="tax-card"
@@ -357,7 +392,7 @@ export function CoinList({ coins, go }: { coins: CoinStat[]; go: (path: string) 
               <Coin asset={c.asset} cls={c.class} size={40} />
               <span className="coin-main">
                 <span className="coin-name">{label(c.asset)}</span>
-                <span className="coin-sub num">{c.held ? `${qty(c.qty)} · ${pct(c.share)}` : "Plus détenu"}</span>
+                <span className="coin-sub num">{c.held ? `${qty(c.qty)}${c.asset.kind === "security" ? " parts" : ""} · ${pct(c.share)}` : "Plus détenu"}</span>
               </span>
               <span className="coin-spark">{c.spark && <Spark values={c.spark} />}</span>
               <span className="coin-num num">

@@ -2,11 +2,12 @@
 // bar, nothing more. Before any operation, Accueil offers three ways to start.
 
 import { useCallback, useEffect, useState } from "react";
-import { get, useLoad, type Op, type Status } from "./api";
+import { get, SCOPES, useLoad, type Op, type Scope, type Status } from "./api";
 import { Mark } from "./components/Mark";
 import { OpDialog } from "./components/OpDialog";
 import { Failed, Loading } from "./components/State";
 import { ago } from "./format";
+import { remember, remembered } from "./lib/remember";
 import { Activity } from "./pages/Activity";
 import { Asset } from "./pages/Asset";
 import { Assets } from "./pages/Assets";
@@ -81,6 +82,24 @@ export function App() {
   const [rev, setRev] = useState(0);
   const [dialog, setDialog] = useState<{ op?: Op } | null>(null);
   const status = useLoad("status" + rev, (s) => get<Status>("status", s));
+  const [picked, setPicked] = useState<Scope>(() => remembered("scope", "all", SCOPES));
+  const pickScope = useCallback((v: Scope) => {
+    setPicked(v);
+    remember("scope", v);
+  }, []);
+
+  // N adds an operation, unless something is being typed or a dialog is open.
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "n" || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("input, textarea, select, [contenteditable], dialog")) return;
+      e.preventDefault();
+      setDialog((d) => d ?? {});
+    };
+    addEventListener("keydown", on);
+    return () => removeEventListener("keydown", on);
+  }, []);
 
   useEffect(() => {
     const on = () => setR(route());
@@ -110,14 +129,17 @@ export function App() {
 
   const empty = st.activities === 0;
   const sync = st.sync;
+  // With one class only, there is nothing to switch: everything is shown.
+  const scope: Scope = st.scopes ? picked : "all";
+  const scoping = st.scopes ? { scope, onScope: pickScope } : { scope };
 
   let page: React.ReactNode;
   switch (r.page) {
     case "activity":
-      page = <Activity rev={rev} onOpen={(op) => setDialog({ op })} onImport={() => go("/importer")} />;
+      page = <Activity {...scoping} rev={rev} onOpen={(op) => setDialog({ op })} onImport={() => go("/importer")} />;
       break;
     case "assets":
-      page = <Assets rev={rev} go={go} />;
+      page = <Assets {...scoping} rev={rev} go={go} />;
       break;
     case "asset":
       page = <Asset key={r.symbol} symbol={r.symbol!} rev={rev} go={go} onOpen={(op) => setDialog({ op })} />;
@@ -126,7 +148,13 @@ export function App() {
       page = <Taxes rev={rev} />;
       break;
     case "settings":
-      page = <Settings sync={sync} rev={rev} onChange={changed} onImport={() => go("/importer")} />;
+      page = <Settings
+          sync={sync}
+          rev={rev}
+          onChange={changed}
+          onImport={() => go("/importer")}
+          onFirstLink={empty ? () => go("/") : undefined}
+        />;
       break;
     case "import":
       page = <Import onDone={changed} onHome={() => go("/")} />;
@@ -135,7 +163,7 @@ export function App() {
       page = empty ? (
         <Welcome onAdd={add} onImport={() => go("/importer")} onSync={() => go("/reglages#fundarr")} />
       ) : (
-        <Home rev={rev} go={go} />
+        <Home {...scoping} rev={rev} go={go} />
       );
   }
 
@@ -167,7 +195,7 @@ export function App() {
         </nav>
         <div className="top-end">
           {gear}
-          <button type="button" className="btn primary add" onClick={add}>
+          <button type="button" className="btn primary add" onClick={add} title="Ajouter (N)" aria-keyshortcuts="N">
             <svg viewBox="0 0 16 16" aria-hidden>
               <path d="M8 3v10M3 8h10" />
             </svg>
@@ -214,6 +242,7 @@ export function App() {
       {dialog && (
         <OpDialog
           op={dialog.op}
+          asset={!dialog.op && r.page === "asset" ? r.symbol : undefined}
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null);
