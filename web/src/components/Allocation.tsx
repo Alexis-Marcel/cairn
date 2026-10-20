@@ -1,4 +1,4 @@
-// Where the value sits: one bar of stones, widths by share, and its key.
+// Where the value sits: stones side by side, widths by share, and the key.
 
 import { eur, pct } from "../format";
 
@@ -6,6 +6,7 @@ export interface Part {
   key: string;
   label: string;
   value: number;
+  icon?: React.ReactNode;
 }
 
 /** Up to five parts; the rest is grouped. */
@@ -33,8 +34,8 @@ export function Allocation({ parts }: { parts: Part[] }) {
           <li key={p.key}>
             <span className={`sw c${n}`} aria-hidden />
             <span className="name">{p.label}</span>
-            <span className="num share">{pct(p.value / total)}</span>
             <span className="num muted">{eur(p.value)}</span>
+            <span className="num share">{pct(p.value / total)}</span>
           </li>
         ))}
       </ul>
