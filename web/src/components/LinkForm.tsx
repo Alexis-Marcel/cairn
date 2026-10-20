@@ -1,7 +1,8 @@
-// The address and token of a Fundarr. Cairn tries them before keeping them.
+// The address and token of a Fundarr. Cairn tries them before keeping them,
+// then copies the history once.
 
 import { useId, useState } from "react";
-import { setLink, type Setup } from "../api";
+import { message, send, type SyncState } from "../api";
 
 export function LinkForm({
   url: initial = "",
@@ -9,7 +10,7 @@ export function LinkForm({
   onCancel,
 }: {
   url?: string;
-  onLinked: (s: Setup) => void;
+  onLinked: (s: SyncState) => void;
   onCancel?: () => void;
 }) {
   const id = useId();
@@ -24,9 +25,9 @@ export function LinkForm({
     setBusy(true);
     setError("");
     try {
-      onLinked(await setLink({ url, token }));
+      onLinked(await send<SyncState>("POST", "sync", { url, token }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(message(err));
       setBusy(false);
     }
   };
@@ -65,7 +66,7 @@ export function LinkForm({
           onChange={(e) => setToken(e.target.value)}
         />
         <small id={id + "-hint"} className="muted">
-          Crée le jeton dans Fundarr → Apps → Cairn.
+          Dans Fundarr : Apps → Add app → Cairn.
         </small>
       </div>
       {error && (
@@ -75,7 +76,7 @@ export function LinkForm({
       )}
       <div className="actions">
         <button type="submit" className="btn primary" disabled={busy || !url.trim() || !token.trim()}>
-          {busy ? "Connexion…" : "Relier"}
+          {busy ? "Synchronisation…" : "Synchroniser"}
         </button>
         {onCancel && (
           <button type="button" className="btn quiet" onClick={onCancel}>

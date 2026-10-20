@@ -62,14 +62,14 @@ function Big({ text }: { text: string }) {
   );
 }
 
-export function Home() {
-  const pf = useLoad("portfolio", (s) => get<Portfolio>("portfolio", s));
-  const hist = useLoad("history", history);
+export function Home({ rev }: { rev: number }) {
+  const pf = useLoad("portfolio" + rev, (s) => get<Portfolio>("portfolio", s));
+  const hist = useLoad("history" + rev, history);
   const monthStart = useMemo(() => {
     const n = new Date();
     return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1));
   }, []);
-  const acts = useLoad("month", (s) => activitiesSince(monthStart, s));
+  const acts = useLoad("month" + rev, (s) => activitiesSince(monthStart, s));
 
   const [period, setPeriod] = useState<Period>(() => remembered("period", "Tout", ["1M", "1A", "Tout"] as const));
   const [view, setView] = useState<"assets" | "sources">(() => remembered("view", "assets", ["assets", "sources"] as const));
@@ -182,7 +182,7 @@ export function Home() {
               label="Répartition par"
               options={[
                 { value: "assets", label: "Actifs" },
-                { value: "sources", label: "Plateformes" },
+                { value: "sources", label: "Comptes" },
               ]}
               value={view}
               onChange={(v) => {

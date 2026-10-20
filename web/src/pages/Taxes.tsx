@@ -62,8 +62,8 @@ function download(t: TaxFR, income: boolean) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function Taxes() {
-  const span = useLoad("span", (s) => get<History>("portfolio/history?step=month", s));
+export function Taxes({ rev }: { rev: number }) {
+  const span = useLoad("span" + rev, (s) => get<History>("portfolio/history?step=month", s));
   const years = useMemo(() => {
     const now = new Date().getFullYear();
     const first = span.data?.points[0]?.date;
@@ -77,7 +77,7 @@ export function Taxes() {
   const [income, setIncome] = useState(false);
 
   const q = `tax/fr?year=${year}${income ? "&rewards=income" : ""}`;
-  const tax = useLoad(span.data ? q : null, (s) => get<TaxFR>(q, s));
+  const tax = useLoad(span.data ? q + "#" + rev : null, (s) => get<TaxFR>(q, s));
 
   if (span.error) return <Failed error={span.error} retry={span.reload} />;
   if (!span.data) return <Loading />;
@@ -180,7 +180,7 @@ export function Taxes() {
           )}
 
           {t.notes.length > 0 && (
-            <ul className="notes" lang="en">
+            <ul className="notes">
               {t.notes.map((n) => (
                 <li key={n}>{n}</li>
               ))}
