@@ -1,6 +1,7 @@
 // Operations in words: their names, and which way their coins move.
 
-import type { Kind, Op, Origin } from "./api";
+import type { Asset, Kind, Op, Origin } from "./api";
+import { unit } from "./assets";
 import { qty } from "./format";
 
 export const KIND: Record<Kind, string> = {
@@ -10,50 +11,59 @@ export const KIND: Record<Kind, string> = {
   deposit: "Dépôt",
   withdrawal: "Retrait",
   reward: "Récompense",
+  dividend: "Dividende",
+  interest: "Intérêts",
   transfer: "Transfert",
   fee: "Frais",
   correction: "Correction",
 };
 
 /** The kinds the form offers, in its order. */
-export const FORM_KINDS: Exclude<Kind, "correction">[] = ["buy", "sell", "swap", "reward", "transfer", "deposit", "withdrawal", "fee"];
+export const FORM_KINDS: Exclude<Kind, "correction">[] = ["buy", "sell", "swap", "reward", "dividend", "transfer", "deposit", "withdrawal", "fee"];
 
 export const ORIGIN: Record<Origin, string> = { manual: "Manuel", import: "Import", fundarr: "Fundarr" };
 
 const MINUS = "−";
 
-/** A quantity and its unit: 0,01 BTC, 60 €. */
-export const amount = (q: string, symbol: string) => (symbol === "EUR" ? `${qty(q)} €` : `${qty(q)} ${symbol}`);
+/** A quantity and its unit: 0,01 BTC, 60 €, 3 parts. */
+export const amount = (q: string, a: Pick<Asset, "kind" | "symbol">) =>
+  a.kind === "fiat" && a.symbol === "EUR" ? `${qty(q)} €` : `${qty(q)} ${unit(a)}`;
 
 /** What a swap gave and got, whichever way the platform wrote it. */
 export function swapLegs(op: Op) {
   return op.side === "buy" && op.quote ? { given: op.quote, got: op.base } : { given: op.base, got: op.quote! };
 }
 
-/** The coin an operation is about, its quantity signed, and for a swap what came back. */
-export function moves(op: Op): { symbol: string; text: string; other?: string } {
-  const out = (sign: number, q: string, symbol: string) => ({ symbol, text: `${sign > 0 ? "+" : MINUS}${amount(q, symbol)}` });
+/**
+ * The asset an operation is about, its quantity signed, and for a swap what
+ * came back. A dividend is about its stock or ETF, in euros.
+ */
+export function moves(op: Op): { asset: Asset; text: string; other?: string } {
+  const out = (sign: number, q: string, asset: Asset) => ({ asset, text: `${sign > 0 ? "+" : MINUS}${amount(q, asset)}` });
   const fiatBase = op.base.asset.kind === "fiat" && op.quote;
   switch (op.kind) {
     case "buy":
-      return fiatBase ? out(1, op.quote!.qty, op.quote!.asset.symbol) : out(1, op.base.qty, op.base.asset.symbol);
+      return fiatBase ? out(1, op.quote!.qty, op.quote!.asset) : out(1, op.base.qty, op.base.asset);
     case "sell":
-      return fiatBase ? out(-1, op.quote!.qty, op.quote!.asset.symbol) : out(-1, op.base.qty, op.base.asset.symbol);
+      return fiatBase ? out(-1, op.quote!.qty, op.quote!.asset) : out(-1, op.base.qty, op.base.asset);
     case "swap": {
       const { given, got } = swapLegs(op);
-      return { ...out(-1, given.qty, given.asset.symbol), other: `+${amount(got.qty, got.asset.symbol)}` };
+      return { ...out(-1, given.qty, given.asset), other: `+${amount(got.qty, got.asset)}` };
     }
+    case "dividend":
+      return { ...out(1, op.base.qty, op.base.asset), asset: op.quote?.asset ?? op.base.asset };
     case "deposit":
     case "reward":
-      return out(1, op.base.qty, op.base.asset.symbol);
+    case "interest":
+      return out(1, op.base.qty, op.base.asset);
     case "withdrawal":
     case "fee":
-      return out(-1, op.base.qty, op.base.asset.symbol);
+      return out(-1, op.base.qty, op.base.asset);
     case "transfer":
-      return out(op.type === "deposit" ? 1 : -1, op.base.qty, op.base.asset.symbol);
+      return out(op.type === "deposit" ? 1 : -1, op.base.qty, op.base.asset);
     default: {
       const sign = op.side === "out" ? -1 : 1;
-      return out(sign, op.base.qty, op.base.asset.symbol);
+      return out(sign, op.base.qty, op.base.asset);
     }
   }
 }

@@ -1,9 +1,11 @@
 // The two pickers of the form: an account (or a new one, typed in place),
-// and a coin (searched by symbol or name, with its icon).
+// and an asset (a coin by symbol or name, a stock or ETF by name or ISIN,
+// with its icon).
 
 import { useId, useMemo, useRef, useState } from "react";
-import type { Account } from "../api";
-import { COINS, EUR, searchCoins, type CoinInfo } from "../coins";
+import type { Account, AssetRef } from "../api";
+import { ISIN } from "../assets";
+import { COINS, EUR } from "../coins";
 import { Coin } from "./Coin";
 
 /** An account chosen: an existing one (id) or a new one (name). */
@@ -70,57 +72,91 @@ export function AccountPicker({
   );
 }
 
+/** An asset to pick: a coin, cash, or a stock or ETF by its ISIN. */
+interface Option {
+  id: string; // symbol, or ISIN
+  kind: AssetRef["kind"];
+  name: string;
+  cls?: AssetRef["class"];
+}
+
+const SYMBOL = /^[A-Z0-9][A-Z0-9.]{0,19}$/;
+
+/** What the input shows for an option: a coin's symbol, a security's name. */
+const shown = (o: Option) => (o.kind === "security" && o.name ? o.name : o.id);
+
+/**
+ * A coin, cash or a security, searched by symbol, name or ISIN. Securities
+ * offered are those already used; any other is typed by its ISIN (checked).
+ * value is the symbol or ISIN.
+ */
 export function AssetPicker({
   label,
   value,
   onChange,
   used = [],
   cash,
+  coins = true,
+  securities = true,
+  newName,
   autoFocus,
 }: {
   label: string;
   value: string;
-  onChange: (symbol: string) => void;
-  used?: string[];
+  onChange: (id: string) => void;
+  used?: AssetRef[];
   cash?: boolean;
+  coins?: boolean;
+  securities?: boolean;
+  /** The name typed for a security Cairn does not know yet, for its icon. */
+  newName?: string;
   autoFocus?: boolean;
 }) {
   const id = useId();
-  const [text, setText] = useState(value);
+  const all = useMemo(() => {
+    const mine: Option[] = used
+      .filter((a) => (a.kind === "security" ? securities : coins && a.kind === "crypto"))
+      .map((a) => ({ id: a.id, kind: a.kind, name: a.name || COINS.find((c) => c.symbol === a.symbol)?.name || "", cls: a.class }));
+    const known = new Set(mine.map((o) => o.id));
+    const others: Option[] = coins ? COINS.filter((c) => !known.has(c.symbol)).map((c) => ({ id: c.symbol, kind: "crypto", name: c.name })) : [];
+    return [...(cash ? [{ id: EUR.symbol, kind: "fiat" as const, name: EUR.name }] : []), ...mine, ...others];
+  }, [used, cash, coins, securities]);
+  const byId = (v: string) => all.find((o) => o.id === v);
+  const [text, setText] = useState(() => {
+    const o = byId(value);
+    return o ? shown(o) : value;
+  });
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
 
-  const all = useMemo(() => {
-    const known = new Set(COINS.map((c) => c.symbol));
-    const extra: CoinInfo[] = used.filter((s) => !known.has(s) && s !== "EUR").map((s) => ({ symbol: s, name: "" }));
-    // What is already held comes first.
-    const mine = COINS.filter((c) => used.includes(c.symbol));
-    const others = COINS.filter((c) => !used.includes(c.symbol));
-    return [...(cash ? [EUR] : []), ...mine, ...extra, ...others];
-  }, [used, cash]);
-
   const typed = text.trim().toUpperCase();
   const matches = useMemo(() => {
-    const m = searchCoins(text, all).slice(0, 8);
-    if (typed && /^[A-Z0-9][A-Z0-9.]{0,19}$/.test(typed) && !all.some((c) => c.symbol === typed)) m.push({ symbol: typed, name: "" });
+    const m = search(text, all).slice(0, 8);
+    const isin = ISIN.test(typed);
+    if (typed && !all.some((o) => o.id === typed)) {
+      if (isin && securities) m.push({ id: typed, kind: "security", name: "" });
+      else if (!isin && coins && SYMBOL.test(typed)) m.push({ id: typed, kind: "crypto", name: "" });
+    }
     return m;
-  }, [text, all, typed]);
+  }, [text, all, typed, coins, securities]);
 
-  const pick = (c: CoinInfo) => {
-    setText(c.symbol);
-    onChange(c.symbol);
+  const pick = (o: Option) => {
+    setText(shown(o));
+    onChange(o.id);
     setOpen(false);
   };
-  const shown = open && matches.length > 0;
+  const current = byId(value) ?? (value ? { id: value, kind: ISIN.test(value) ? ("security" as const) : ("crypto" as const), name: "" } : null);
+  const showsIcon = !!current && shown(current).toUpperCase() === typed;
+  const listed = open && matches.length > 0;
 
   return (
     <div className="field">
       <label htmlFor={id}>{label}</label>
       <div className="combo">
-        {value && value === typed && (
+        {showsIcon && (
           <span className="combo-coin" aria-hidden>
-            <Coin symbol={value} />
+            <Coin asset={{ kind: current.kind, symbol: current.id, name: current.name || newName }} cls={current.cls} />
           </span>
         )}
         <input
@@ -128,14 +164,13 @@ export function AssetPicker({
           id={id}
           type="text"
           role="combobox"
-          aria-expanded={shown}
+          aria-expanded={listed}
           aria-controls={id + "-list"}
           aria-autocomplete="list"
-          aria-activedescendant={shown ? `${id}-o${active}` : undefined}
-          className={value && value === typed ? "has-coin" : ""}
-          placeholder="BTC, Ethereum…"
+          aria-activedescendant={listed ? `${id}-o${active}` : undefined}
+          className={showsIcon ? "has-coin" : ""}
+          placeholder={!securities ? "BTC, Ethereum…" : coins ? "BTC, nom ou ISIN…" : "Nom ou ISIN"}
           autoComplete="off"
-          autoCapitalize="characters"
           spellCheck={false}
           autoFocus={autoFocus}
           value={text}
@@ -143,15 +178,18 @@ export function AssetPicker({
             setText(e.target.value);
             setOpen(true);
             setActive(0);
-            const t = e.target.value.trim().toUpperCase();
-            onChange(all.some((c) => c.symbol === t) ? t : "");
+            const t = e.target.value.trim();
+            const o = all.find((x) => x.id === t.toUpperCase() || (x.kind === "security" && x.name && x.name === t));
+            onChange(o ? o.id : "");
           }}
           onFocus={() => setOpen(true)}
           onBlur={() => {
             setOpen(false);
-            // A symbol typed out counts, known or not.
-            if (typed && /^[A-Z0-9][A-Z0-9.]{0,19}$/.test(typed)) {
-              setText(typed);
+            if (current && shown(current) === text.trim()) return;
+            // A symbol or an ISIN typed out counts, known or not.
+            if (typed && ((ISIN.test(typed) && securities) || (!ISIN.test(typed) && coins && SYMBOL.test(typed)))) {
+              const o = byId(typed);
+              setText(o ? shown(o) : typed);
               onChange(typed);
             }
           }}
@@ -163,34 +201,43 @@ export function AssetPicker({
             } else if (e.key === "ArrowUp") {
               e.preventDefault();
               setActive((a) => Math.max(a - 1, 0));
-            } else if (e.key === "Enter" && shown) {
+            } else if (e.key === "Enter" && listed) {
               e.preventDefault();
               pick(matches[active]);
-            } else if (e.key === "Escape" && shown) {
+            } else if (e.key === "Escape" && listed) {
               e.preventDefault();
               e.stopPropagation();
               setOpen(false);
             }
           }}
         />
-        {shown && (
+        {listed && (
           <ul className="combo-list" id={id + "-list"} role="listbox" aria-label={label}>
-            {matches.map((c, n) => (
+            {matches.map((o, n) => (
               <li
-                key={c.symbol}
+                key={o.id}
                 id={`${id}-o${n}`}
                 role="option"
                 aria-selected={n === active}
                 className={n === active ? "on" : ""}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  pick(c);
+                  pick(o);
                 }}
                 onMouseEnter={() => setActive(n)}
               >
-                <Coin symbol={c.symbol} />
-                <span className="sym">{c.symbol}</span>
-                <span className="muted">{c.name}</span>
+                <Coin asset={{ kind: o.kind, symbol: o.id, name: o.name }} cls={o.cls} />
+                {o.kind === "security" ? (
+                  <>
+                    <span className="sym name">{o.name || "Nouveau titre"}</span>
+                    <span className="muted">{o.id}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="sym">{o.id}</span>
+                    <span className="muted">{o.name}</span>
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -198,4 +245,19 @@ export function AssetPicker({
       </div>
     </div>
   );
+}
+
+const fold = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+/** Options matching what is typed: symbol or ISIN first, then name. */
+function search(q: string, list: Option[]): Option[] {
+  const t = fold(q.trim());
+  if (!t) return list;
+  const starts = list.filter((o) => fold(o.id).startsWith(t) || (o.kind === "security" && fold(o.name).startsWith(t)));
+  const rest = list.filter((o) => !starts.includes(o) && (fold(o.name).includes(t) || fold(o.id).includes(t)));
+  return [...starts, ...rest];
 }

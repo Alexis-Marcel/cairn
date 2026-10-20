@@ -1,8 +1,9 @@
-// Each coin's total gain (held or not), best first: a bar from a middle line,
+// Each asset's total gain (held or not), best first: a bar from a middle line,
 // right for a gain, left for a loss.
 
 import { Coin } from "./Coin";
 import type { CoinStat } from "../api";
+import { label } from "../assets";
 import { eur, pct } from "../format";
 
 export function Ranking({ coins, onOpen }: { coins: CoinStat[]; onOpen: (symbol: string) => void }) {
@@ -13,11 +14,11 @@ export function Ranking({ coins, onOpen }: { coins: CoinStat[]; onOpen: (symbol:
   return (
     <ol className={both ? "rank both" : "rank"}>
       {shown.map((c) => (
-        <li key={c.asset.symbol}>
-          <button type="button" onClick={() => onOpen(c.asset.symbol)}>
+        <li key={c.id}>
+          <button type="button" onClick={() => onOpen(c.id)}>
             <span className="rank-name">
-              <Coin symbol={c.asset.symbol} />
-              {c.asset.symbol}
+              <Coin asset={c.asset} cls={c.class} />
+              <span className="rank-label">{label(c.asset)}</span>
             </span>
             <span className="rank-track" aria-hidden>
               <span className={`rank-bar ${c.gain >= 0 ? "up" : "down"}`} style={{ width: `${(Math.abs(c.gain) / max) * (both ? 50 : 100)}%` }} />

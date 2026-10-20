@@ -53,7 +53,7 @@ export function SplitArea({ points }: { points: SplitPoint[] }) {
           width={width}
           height={height}
           role="img"
-          aria-label="Valeur décomposée en apports, récompenses et marché"
+          aria-label="Valeur décomposée en apports, revenus et marché"
           onPointerMove={(e) => setAt(nearest(xs, e.clientX - e.currentTarget.getBoundingClientRect().left))}
           onPointerDown={(e) => setAt(nearest(xs, e.clientX - e.currentTarget.getBoundingClientRect().left))}
           onPointerLeave={() => setAt(null)}
@@ -100,7 +100,7 @@ export function SplitArea({ points }: { points: SplitPoint[] }) {
           <div>
             <dt>
               <i className="sw earned" />
-              Récompenses
+              Revenus
             </dt>
             <dd>{eur(p.earned)}</dd>
           </div>

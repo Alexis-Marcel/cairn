@@ -1,8 +1,9 @@
 // Activité: every operation, newest first, whatever its origin. Filter by
-// account or coin, search, open one to change it.
+// account or asset, search, open one to change it.
 
 import { useEffect, useMemo, useState } from "react";
-import { get, useLoad, type Account, type Op, type Ops } from "../api";
+import { get, useLoad, type Account, type Op, type Ops, type AssetRef } from "../api";
+import { label } from "../assets";
 import { OpList } from "../components/OpList";
 import { Failed, SkelRows } from "../components/State";
 
@@ -24,7 +25,7 @@ export function Activity({ rev, onOpen, onImport }: { rev: number; onOpen: (op: 
   }, [q]);
 
   const accounts = useLoad("accounts" + rev, (s) => get<Account[]>("accounts", s));
-  const assets = useLoad("assets" + rev, (s) => get<string[]>("assets", s));
+  const assets = useLoad("assets" + rev, (s) => get<AssetRef[]>("assets", s));
   const query = useMemo(() => {
     const p = new URLSearchParams({ limit: String(PAGE) });
     if (account) p.set("account", account);
@@ -89,9 +90,9 @@ export function Activity({ rev, onOpen, onImport }: { rev: number; onOpen: (op: 
           <span className="sr">Actif</span>
           <select value={asset} onChange={(e) => setAsset(e.target.value)}>
             <option value="">Tous les actifs</option>
-            {assets.data?.map((s) => (
-              <option key={s} value={s}>
-                {s}
+            {assets.data?.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.kind === "fiat" ? (a.symbol === "EUR" ? "Euros" : a.symbol) : label(a)}
               </option>
             ))}
           </select>

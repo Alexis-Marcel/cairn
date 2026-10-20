@@ -15,6 +15,7 @@ import { Segmented } from "../components/Segmented";
 import { Spark } from "../components/Spark";
 import { SplitArea } from "../components/SplitArea";
 import { Failed, Skel, SkelRows, Slow } from "../components/State";
+import { CLASS, label } from "../assets";
 import { date, day, eur, eurShort, monthLong, pct, qty, time, tone } from "../format";
 import { utc } from "../lib/chart";
 import { remember, remembered } from "../lib/remember";
@@ -79,7 +80,7 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
 
   const [period, setPeriod] = useState<PeriodKey>(() => remembered("period", "1A", ["7J", "1M", "YTD", "1A", "Tout"] as const));
   const [view, setView] = useState<View>(() => remembered("view", "value", ["value", "perf"] as const));
-  const [by, setBy] = useState<"assets" | "sources">(() => remembered("by", "assets", ["assets", "sources"] as const));
+  const [by, setBy] = useState<"assets" | "classes" | "sources">(() => remembered("by", "assets", ["assets", "classes", "sources"] as const));
   const [scrub, setScrub] = useState<number | null>(null);
 
   const o = ov.data;
@@ -225,9 +226,9 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
           <dd className="figure-sub">versés moins retirés</dd>
         </div>
         <div>
-          <dt>Récompenses</dt>
-          <dd>{eur(o.total.rewards)}</dd>
-          <dd className="figure-sub">staking compris</dd>
+          <dt>Revenus</dt>
+          <dd>{eur(o.total.rewards + o.total.dividends + o.total.interest)}</dd>
+          <dd className="figure-sub">{incomeParts(o.total)}</dd>
         </div>
         <div>
           <dt>Frais payés</dt>
@@ -269,6 +270,7 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
                 className="toggle small"
                 options={[
                   { value: "assets", label: "Actifs" },
+                  { value: "classes", label: "Classes" },
                   { value: "sources", label: "Comptes" },
                 ]}
                 value={by}
@@ -283,11 +285,13 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
                 <Allocation
                   parts={
                     by === "assets"
-                      ? pf.data.assets.map((a) => ({ key: a.asset.symbol, label: a.asset.symbol, value: Number(a.value) }))
-                      : pf.data.sources.map((s) => ({ key: s.id, label: s.name, value: Number(s.value) }))
+                      ? pf.data.assets.map((a) => ({ key: a.id, label: label(a.asset), value: Number(a.value) }))
+                      : by === "classes"
+                        ? Object.entries(o.classes).map(([k, v]) => ({ key: k, label: CLASS[k as keyof typeof CLASS], value: v ?? 0 }))
+                        : pf.data.sources.map((s) => ({ key: s.id, label: s.name, value: Number(s.value) }))
                   }
                 />
-                {o.total.value > 0 && o.total.stable > 0 && (
+                {by !== "classes" && o.total.value > 0 && o.total.stable > 0 && (
                   <p className="stable num">
                     <span className="muted">Stablecoins</span>
                     <span>{pct(o.total.stable / o.total.value)}</span>
@@ -327,7 +331,7 @@ export function Home({ rev, go }: { rev: number; go: (path: string) => void }) {
         <span>
           État au {date(o.at)}, {time(o.at)}
         </span>
-        {o.unpriced.length > 0 && <span>Sans cours : {o.unpriced.map((a) => a.symbol).join(", ")}</span>}
+        {o.unpriced.length > 0 && <span>Sans cours : {o.unpriced.map(label).join(", ")}</span>}
       </footer>
     </div>
   );
@@ -341,18 +345,18 @@ export function CoinList({ coins, go }: { coins: CoinStat[]; go: (path: string) 
       {coins.map((c) => {
         const g = c.held ? c.unrealized : c.gain;
         return (
-          <li key={c.asset.symbol}>
+          <li key={c.id}>
             <a
-              href={"/actifs/" + c.asset.symbol}
+              href={"/actifs/" + c.id}
               onClick={(e) => {
                 if (e.metaKey || e.ctrlKey) return;
                 e.preventDefault();
-                go("/actifs/" + c.asset.symbol);
+                go("/actifs/" + c.id);
               }}
             >
-              <Coin symbol={c.asset.symbol} size={40} />
+              <Coin asset={c.asset} cls={c.class} size={40} />
               <span className="coin-main">
-                <span className="coin-name">{c.asset.symbol}</span>
+                <span className="coin-name">{label(c.asset)}</span>
                 <span className="coin-sub num">{c.held ? `${qty(c.qty)} · ${pct(c.share)}` : "Plus détenu"}</span>
               </span>
               <span className="coin-spark">{c.spark && <Spark values={c.spark} />}</span>
@@ -396,8 +400,8 @@ function StatsSection({ stats, go }: { stats: Stats; go: (path: string) => void 
         <SplitArea points={months} />
       </div>
       <div className="stat">
-        <h3>Récompenses cumulées</h3>
-        <Rewards months={months} />
+        <h3>Revenus cumulés</h3>
+        <Income months={months} />
       </div>
       <div className="stat">
         <h3>Gain par actif</h3>
@@ -407,43 +411,72 @@ function StatsSection({ stats, go }: { stats: Stats; go: (path: string) => void 
   );
 }
 
-function Rewards({ months }: { months: Stats["months"] }) {
+/** What the income figure is made of, in a few words. */
+function incomeParts(t: Overview["total"]): string {
+  if (t.dividends > 0) return `dont ${eur(t.dividends)} de dividendes`;
+  if (t.interest > 0) return `dont ${eur(t.interest)} d'intérêts`;
+  return "staking compris";
+}
+
+/** Rewards, dividends and interest, received month after month. */
+function Income({ months }: { months: Stats["months"] }) {
   const [at, setAt] = useState<number | null>(null);
-  const shown = useMemo(() => {
-    const first = months.findIndex((m) => m.earned > 0);
-    return first < 0 ? [] : months.slice(Math.max(0, first - 1));
+  const month = (x: Stats["months"][number]) => x.rewards + x.dividends + x.interest;
+  const { shown, cum } = useMemo(() => {
+    let sum = 0;
+    const all = months.map((x) => (sum += month(x)));
+    const first = all.findIndex((v) => v > 0);
+    const from = first < 0 ? months.length : Math.max(0, first - 1);
+    return { shown: months.slice(from), cum: all.slice(from) };
   }, [months]);
   const t = useMemo(() => shown.map((x) => utc(x.m)), [shown]);
-  const y = useMemo(() => shown.map((x) => x.earned), [shown]);
-  if (shown.length < 2) return <p className="empty">Aucune récompense pour l'instant.</p>;
-  const m = at !== null ? shown[at] : shown[shown.length - 1];
-  const last12 = months.slice(-12).reduce((s, x) => s + x.rewards, 0);
+  if (shown.length < 2) return <p className="empty">Aucun revenu pour l'instant.</p>;
+  const i = at ?? shown.length - 1;
+  const m = shown[i];
+  const last12 = months.slice(-12).reduce((s, x) => s + month(x), 0);
+  const total = (k: "rewards" | "dividends" | "interest") => months.reduce((s, x) => s + x[k], 0);
+  const split = (
+    [
+      ["Staking", total("rewards")],
+      ["Dividendes", total("dividends")],
+      ["Intérêts", total("interest")],
+    ] as const
+  ).filter(([, v]) => v > 0);
   return (
     <div>
       <LineChart
         t={t}
-        y={y}
+        y={cum}
         tone="ink"
         fromZero
         axis={eurShort}
         height={168}
-        dataKey="rewards"
-        label="Récompenses cumulées, mois par mois"
+        dataKey="income"
+        label="Revenus cumulés, mois par mois"
         scrub={at}
         onScrub={setAt}
       />
       <p className="chart-note num" aria-live="polite">
         {at !== null ? (
           <>
-            {monthLong(utc(m.m))} <b>{eur(m.earned)}</b>
-            <span className="muted"> · {eur(m.rewards, { sign: true })} ce mois-là</span>
+            {monthLong(utc(m.m))} <b>{eur(cum[i])}</b>
+            <span className="muted"> · {eur(month(m), { sign: true })} ce mois-là</span>
           </>
         ) : (
           <>
-            <b>{eur(m.earned)}</b> reçues <span className="muted">· {eur(last12)} sur 12 mois</span>
+            <b>{eur(cum[i])}</b> reçus <span className="muted">· {eur(last12)} sur 12 mois</span>
           </>
         )}
       </p>
+      {split.length > 1 && (
+        <p className="chart-note income-split num">
+          {split.map(([k, v]) => (
+            <span key={k}>
+              <span className="muted">{k}</span> {eur(v)}
+            </span>
+          ))}
+        </p>
+      )}
     </div>
   );
 }

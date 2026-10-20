@@ -3,9 +3,10 @@
 // close until it is typed over.
 
 import { useEffect, useId, useMemo, useState } from "react";
-import { get, message, send, type Account, type Entry, type Kind, type Op } from "../api";
-import { date as longDate, eur, num, qty as fmtQty } from "../format";
-import { FORM_KINDS, KIND, ORIGIN, detail, moves, swapLegs } from "../ops";
+import { get, message, send, type Account, type AssetRef, type Entry, type Kind, type Op } from "../api";
+import { ISIN, assetId, label, validISIN } from "../assets";
+import { date as longDate, eur, num } from "../format";
+import { FORM_KINDS, KIND, ORIGIN, amount, detail, moves, swapLegs } from "../ops";
 import { Coin } from "./Coin";
 import { AccountPicker, AssetPicker, type AccountChoice } from "./Pickers";
 
@@ -28,6 +29,7 @@ interface State {
   account: AccountChoice;
   to: AccountChoice;
   asset: string;
+  name: string;
   qty: string;
   total: string;
   fee: string;
@@ -43,7 +45,8 @@ function fromOp(op: Op): State {
     date: op.time.slice(0, 10),
     account: { id: op.account.id },
     to: {},
-    asset: op.base.asset.symbol,
+    asset: assetId(op.base.asset),
+    name: op.base.asset.name ?? "",
     qty: fr(op.base.qty),
     total: "",
     fee: op.fee && op.fee.asset.symbol === "EUR" ? fr(op.fee.qty) : "",
@@ -55,6 +58,9 @@ function fromOp(op: Op): State {
     case "buy":
     case "sell":
       s.total = fr(op.quote?.qty);
+      break;
+    case "dividend":
+      if (op.quote) Object.assign(s, { asset: assetId(op.quote.asset), name: op.quote.asset.name ?? "" });
       break;
     case "swap": {
       const { given, got } = swapLegs(op);
@@ -91,7 +97,7 @@ export function OpForm({
 }: {
   op?: Op;
   accounts: Account[];
-  used: string[];
+  used: AssetRef[];
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -106,6 +112,7 @@ export function OpForm({
           account: first ? { id: first.id } : { name: "" },
           to: {},
           asset: "",
+          name: "",
           qty: "",
           total: "",
           fee: "",
@@ -123,7 +130,13 @@ export function OpForm({
 
   const k = s.kind;
   const priced = k === "buy" || k === "sell";
-  const cash = k === "deposit" || k === "withdrawal" || k === "fee";
+  const cash = k === "deposit" || k === "withdrawal" || k === "fee" || k === "interest";
+  const income = k === "dividend" || k === "interest";
+  // A stock or an ETF: by its ISIN, named when Cairn does not know it yet.
+  const isin = ISIN.test(s.asset);
+  const known = used.find((a) => a.id === s.asset);
+  const needsName = isin && !known?.name;
+  const badIsin = isin && !validISIN(s.asset);
 
   // The day's close of the coin, for the price.
   const key = priced && s.asset && s.date ? `${s.asset}|${s.date}` : "";
@@ -147,15 +160,20 @@ export function OpForm({
   const suggested = price && q > 0 ? fr((price * q).toFixed(2)) : "";
   const total = touched || !priced ? s.total : suggested;
 
-  // Switching to a deposit starts in euros; back from it, to a coin.
+  // Switching to a deposit starts in euros; back from it, to a coin; a
+  // dividend wants a security.
   const pickKind = (kind: FormKind) => {
-    const toCash = kind === "deposit" || kind === "withdrawal";
-    const wasCash = k === "deposit" || k === "withdrawal";
-    set({ kind, asset: toCash && !s.asset ? "EUR" : !toCash && wasCash && s.asset === "EUR" ? "" : s.asset });
+    const toCash = kind === "deposit" || kind === "withdrawal" || kind === "interest";
+    const wasCash = k === "deposit" || k === "withdrawal" || k === "interest";
+    let asset = toCash && !s.asset ? "EUR" : !toCash && wasCash && s.asset === "EUR" ? "" : s.asset;
+    if (kind === "dividend" && !ISIN.test(asset)) asset = "";
+    if (kind === "interest") asset = "EUR";
+    set({ kind, asset });
   };
 
   const entry = (): Entry => {
     const e: Entry = { kind: k, date: s.date, asset: s.asset, qty: s.qty, note: s.note || undefined, ...accountOf(s.account) };
+    if (isin) e.name = (needsName ? s.name : known?.name || s.name).trim() || undefined;
     if (priced) Object.assign(e, { total, fee: s.fee });
     if (k === "swap") Object.assign(e, { received: s.received, receivedQty: s.receivedQty, fee: s.fee });
     if (k === "transfer") {
@@ -197,18 +215,21 @@ export function OpForm({
     !!s.date &&
     (s.account.id || s.account.name?.trim()) &&
     !!s.asset &&
+    !badIsin &&
+    (!needsName || !!s.name.trim()) &&
     q > 0 &&
     (!priced || parse(total) > 0) &&
     (k !== "swap" || (!!s.received && parse(s.receivedQty) > 0)) &&
     (k !== "transfer" || !!(s.to.id || s.to.name?.trim()));
 
-  const qtyLabel = s.asset === "EUR" ? "Montant (€)" : k === "fee" ? "Frais" : k === "swap" ? "Quantité donnée" : "Quantité";
+  const qtyLabel = income ? "Reçu (€)" : s.asset === "EUR" ? "Montant (€)" : k === "fee" ? "Frais" : k === "swap" ? "Quantité donnée" : "Quantité";
+  const kinds = FORM_KINDS.includes(k) ? FORM_KINDS : [...FORM_KINDS, k];
 
   return (
     <form className="op-form" onSubmit={submit} noValidate aria-busy={busy}>
       <fieldset className="kinds">
         <legend className="sr">Opération</legend>
-        {FORM_KINDS.map((kind) => (
+        {kinds.map((kind) => (
           <label key={kind} className={kind === k ? "chip on" : "chip"}>
             <input type="radio" name={id + "-kind"} value={kind} checked={kind === k} onChange={() => pickKind(kind)} />
             {KIND[kind]}
@@ -233,14 +254,19 @@ export function OpForm({
       </div>
 
       <div className="grid2">
-        <AssetPicker
-          key={k + (cash ? "c" : "")}
-          label={k === "swap" ? "Donné" : k === "deposit" || k === "withdrawal" ? "Actif" : "Crypto"}
-          value={s.asset}
-          used={used}
-          cash={cash}
-          onChange={(asset) => set({ asset })}
-        />
+        {k !== "interest" && (
+          <AssetPicker
+            key={k + (cash ? "c" : "")}
+            label={k === "swap" ? "Donné" : k === "dividend" ? "Versé par" : "Actif"}
+            value={s.asset}
+            used={used}
+            cash={cash}
+            coins={k !== "dividend"}
+            securities={k !== "swap"}
+            newName={s.name}
+            onChange={(asset) => set({ asset })}
+          />
+        )}
         <label className="field">
           <span>{qtyLabel}</span>
           <input
@@ -252,9 +278,27 @@ export function OpForm({
             onChange={(e) => set({ qty: e.target.value })}
           />
         </label>
+        {needsName && (
+          <div className="field wide">
+            <label htmlFor={id + "-name"}>Nom</label>
+            <input
+              id={id + "-name"}
+              type="text"
+              autoComplete="off"
+              maxLength={80}
+              placeholder="iShares Core MSCI World"
+              aria-describedby={id + "-isin"}
+              value={s.name}
+              onChange={(e) => set({ name: e.target.value })}
+            />
+            <small id={id + "-isin"} className={badIsin ? "form-error" : "muted"}>
+              {badIsin ? "ISIN invalide : vérifie-le" : `Nouveau titre · ${s.asset}`}
+            </small>
+          </div>
+        )}
         {k === "swap" && (
           <>
-            <AssetPicker label="Reçu" value={s.received} used={used} onChange={(received) => set({ received })} />
+            <AssetPicker label="Reçu" value={s.received} used={used} securities={false} onChange={(received) => set({ received })} />
             <label className="field">
               <span>Quantité reçue</span>
               <input
@@ -289,7 +333,7 @@ export function OpForm({
                 }}
               />
               <small id={id + "-hint"} className="muted">
-                {price ? `1 ${s.asset} ≈ ${eur(price)} ce jour-là` : " "}
+                {price ? `1 ${isin ? "part" : s.asset} ≈ ${eur(price)} ce jour-là` : " "}
               </small>
             </div>
           )}
@@ -352,16 +396,18 @@ export function OpDetails({ op, onClose }: { op: Op; onClose: () => void }) {
       ["Quantité", m.other ? `${m.text}, ${m.other}` : m.text],
     ];
     if (op.value) r.push(["Valeur", eur(op.value, { cents: true })]);
-    if (op.fee) r.push(["Frais", `${fmtQty(op.fee.qty)} ${op.fee.asset.symbol}`]);
+    if (op.fee) r.push(["Frais", amount(op.fee.qty, op.fee.asset)]);
+    const isin = (op.kind === "dividend" ? op.quote?.asset : op.base.asset)?.isin;
+    if (isin) r.push(["ISIN", isin]);
     if (op.note) r.push(["Note", op.note]);
     return r;
   }, [op, m]);
   return (
     <div className="op-details">
       <p className="op-title">
-        <Coin symbol={m.symbol} />
+        <Coin asset={m.asset} />
         <span>
-          {KIND[op.kind]} <span className={`badge ${op.origin}`}>{ORIGIN[op.origin]}</span>
+          {KIND[op.kind]} {m.asset.kind === "security" && label(m.asset)} <span className={`badge ${op.origin}`}>{ORIGIN[op.origin]}</span>
         </span>
       </p>
       <dl>

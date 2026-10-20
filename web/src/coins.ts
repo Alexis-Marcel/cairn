@@ -63,18 +63,3 @@ export const COINS: CoinInfo[] = [
 
 /** Euros, for deposits and withdrawals of cash. */
 export const EUR: CoinInfo = { symbol: "EUR", name: "Euro" };
-
-const fold = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
-
-/** Coins matching what is typed: symbol first, then name. */
-export function searchCoins(q: string, list: CoinInfo[]): CoinInfo[] {
-  const t = fold(q.trim());
-  if (!t) return list;
-  const starts = list.filter((c) => fold(c.symbol).startsWith(t));
-  const rest = list.filter((c) => !starts.includes(c) && (fold(c.name).includes(t) || fold(c.symbol).includes(t)));
-  return [...starts, ...rest];
-}
