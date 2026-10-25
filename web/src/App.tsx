@@ -104,8 +104,11 @@ export function App() {
     remember("scope", v);
   }, []);
 
-  // N adds an operation, unless something is being typed or a dialog is open.
+  // N adds an operation, unless something is being typed or a dialog is open
+  // (or nothing can be added: a public demo).
+  const readOnly = status.data?.readOnly ?? false;
   useEffect(() => {
+    if (readOnly) return;
     const on = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() !== "n" || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
       const el = e.target as HTMLElement | null;
@@ -115,7 +118,7 @@ export function App() {
     };
     addEventListener("keydown", on);
     return () => removeEventListener("keydown", on);
-  }, []);
+  }, [readOnly]);
 
   useEffect(() => {
     const on = () => setR(route());
@@ -214,14 +217,25 @@ export function App() {
         </nav>
         <div className="top-end">
           {gear}
-          <button type="button" className="btn primary add" onClick={add} title="Ajouter (N)" aria-keyshortcuts="N">
-            <svg viewBox="0 0 16 16" aria-hidden>
-              <path d="M8 3v10M3 8h10" />
-            </svg>
-            Ajouter
-          </button>
+          {!st.readOnly && (
+            <button type="button" className="btn primary add" onClick={add} title="Ajouter (N)" aria-keyshortcuts="N">
+              <svg viewBox="0 0 16 16" aria-hidden>
+                <path d="M8 3v10M3 8h10" />
+              </svg>
+              Ajouter
+            </button>
+          )}
         </div>
       </header>
+      {st.readOnly && (
+        <p className="demo-banner">
+          <strong>Démo publique</strong>
+          <span>Un portefeuille inventé, lu dans la démo de Fundarr. Lecture seule.</span>
+          <a href="https://github.com/Alexis-Marcel/cairn" target="_blank" rel="noreferrer">
+            Installer Cairn
+          </a>
+        </p>
+      )}
       <main id="main">{page}</main>
       <footer className="site-foot">
         <a href="/impots" onClick={link("/impots")} aria-current={r.page === "taxes" ? "page" : undefined}>

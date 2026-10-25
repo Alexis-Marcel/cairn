@@ -77,6 +77,7 @@ date,type,actif,quantite,prix,frais,recu,quantite_recue,compte,note,isin,nom
 | `CAIRN_DATA` | `/data` | where `cairn.db` is kept (readable by Cairn alone: it holds the Fundarr token) |
 | `CAIRN_ADDR` | `:8080` | address to listen on |
 | `CAIRN_CACHE` | `60s` | how long a computed answer is kept while nothing changes (prices move) |
+| `CAIRN_READ_ONLY` | | `1`: a public demo, every change refused (Fundarr's notifications still go through) |
 | `FUNDARR_URL` | | Fundarr's address; fixes the link, no page to change it |
 | `FUNDARR_TOKEN` | | Fundarr read token (`fdr_…`), with `FUNDARR_URL` |
 | `FUNDARR_NOTIFY_SECRET` | | the notify secret, instead of pasting it in Réglages |

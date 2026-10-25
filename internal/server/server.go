@@ -29,7 +29,9 @@ type Server struct {
 	// FromEnv: FUNDARR_URL and FUNDARR_TOKEN fix the link; the UI cannot
 	// change it.
 	FromEnv bool
-	Log     *slog.Logger
+	// ReadOnly: a public demo (CAIRN_READ_ONLY); every write is refused.
+	ReadOnly bool
+	Log      *slog.Logger
 	// Now is the clock (tests set it).
 	Now func() time.Time
 }
@@ -93,7 +95,7 @@ func (s *Server) Handler(dist fs.FS) http.Handler {
 	// Fundarr's notifications come from Fundarr, not from the page: the
 	// signature is their proof.
 	mux.HandleFunc("POST /api/fundarr/notify", s.Sync.Notified)
-	mux.Handle("/api/", guard(api))
+	mux.Handle("/api/", s.readOnly(guard(api)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.St.Ping(r.Context()); err != nil {
 			http.Error(w, "database", http.StatusServiceUnavailable)
@@ -105,6 +107,20 @@ func (s *Server) Handler(dist fs.FS) http.Handler {
 		mux.Handle("/", spa(dist))
 	}
 	return secure(mux)
+}
+
+// readOnly refuses every write when Cairn is a public demo.
+func (s *Server) readOnly(h http.Handler) http.Handler {
+	if !s.ReadOnly {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeErr(w, http.StatusForbidden, "Démo en lecture seule : installe Cairn pour ajouter tes opérations")
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
 }
 
 // guard refuses writes that do not come from Cairn's own page.
@@ -307,5 +323,5 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Scopes are offered when the history holds both crypto and securities.
-	writeJSON(w, 200, map[string]any{"activities": n, "sync": sv, "scopes": l.Both()})
+	writeJSON(w, 200, map[string]any{"activities": n, "sync": sv, "scopes": l.Both(), "readOnly": s.ReadOnly})
 }

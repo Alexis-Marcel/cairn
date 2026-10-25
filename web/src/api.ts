@@ -186,6 +186,8 @@ export interface Status {
   sync: SyncState;
   /** The history holds crypto and securities: the scopes say something. */
   scopes: boolean;
+  /** A public demo (CAIRN_READ_ONLY): nothing can be changed. */
+  readOnly?: boolean;
 }
 
 /** What the figures cover: everything, crypto alone, stocks and ETFs alone. */

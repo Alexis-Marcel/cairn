@@ -105,7 +105,8 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	srv := &server.Server{St: st, Books: engine, Sync: syncer, FromEnv: fromEnv, Log: log}
+	readOnly := isTrue(env("CAIRN_READ_ONLY", ""))
+	srv := &server.Server{St: st, Books: engine, Sync: syncer, FromEnv: fromEnv, ReadOnly: readOnly, Log: log}
 	hs := &http.Server{Addr: addr, Handler: srv.Handler(dist), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -140,4 +141,12 @@ func health() int {
 		return 1
 	}
 	return 0
+}
+
+func isTrue(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
