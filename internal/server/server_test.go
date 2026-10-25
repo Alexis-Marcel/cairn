@@ -345,3 +345,38 @@ func TestScopes(t *testing.T) {
 		t.Error("unknown scope")
 	}
 }
+
+// TestReadOnly: a public demo (CAIRN_READ_ONLY) serves every read and
+// refuses every write.
+func TestReadOnly(t *testing.T) {
+	c := newClient(t)
+	c.add(map[string]string{"kind": "buy", "date": "2024-01-10", "newAccount": "Binance", "asset": "btc", "qty": "0,1", "total": "4000"})
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	eng := books.New(c.st, testutil.Prices(c.st, now))
+	eng.Now = func() time.Time { return now }
+	ro := &client{t: t, st: c.st, h: (&Server{St: c.st, Books: eng, Sync: fundarr.New(c.st, log), Log: log, ReadOnly: true, Now: func() time.Time { return now }}).Handler(nil)}
+
+	var st struct{ ReadOnly bool }
+	if ro.do("GET", "/api/status", nil, &st); !st.ReadOnly {
+		t.Fatal("status does not say read-only")
+	}
+	if code := ro.do("GET", "/api/operations", nil, nil); code != 200 {
+		t.Fatalf("read %d", code)
+	}
+	for _, w := range []struct{ method, path string }{
+		{"POST", "/api/operations"},
+		{"DELETE", "/api/accounts/1"},
+		{"PUT", "/api/plan"},
+		{"POST", "/api/import"},
+		{"DELETE", "/api/sync"},
+		{"POST", "/api/sync/now"},
+	} {
+		if code := ro.do(w.method, w.path, map[string]string{}, nil); code != http.StatusForbidden {
+			t.Errorf("%s %s: %d, want 403", w.method, w.path, code)
+		}
+	}
+	var n struct{ Activities int }
+	if ro.do("GET", "/api/status", nil, &n); n.Activities != 1 {
+		t.Fatalf("activities %d", n.Activities)
+	}
+}

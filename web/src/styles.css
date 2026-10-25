@@ -3760,3 +3760,24 @@ button.tag {
   width: auto;
   min-width: 160px;
 }
+
+/* Public demo (CAIRN_READ_ONLY). */
+.demo-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--ochre) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ochre) 35%, transparent);
+}
+.demo-banner strong {
+  color: var(--ochre);
+}
+.demo-banner a {
+  color: var(--ink);
+  font-weight: 600;
+}
