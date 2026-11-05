@@ -343,7 +343,7 @@ function Assistants() {
             </>
           )}
           <form
-            className="with-action"
+            className="with-action token-form"
             onSubmit={(e) => {
               e.preventDefault();
               if (name.trim()) create();
