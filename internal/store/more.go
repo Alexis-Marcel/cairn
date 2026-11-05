@@ -493,6 +493,9 @@ const kSplit = "migrated.split_accounts"
 
 // migrate brings an earlier database up to date, once.
 func (s *Store) migrate(ctx context.Context) error {
+	if err := s.migrateToken(ctx); err != nil {
+		return err
+	}
 	done, err := s.setting(ctx, s.db, kSplit)
 	if err != nil || done != "" {
 		return err

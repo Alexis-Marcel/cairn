@@ -236,3 +236,33 @@ func TestSubAccounts(t *testing.T) {
 		t.Fatalf("%+v", b)
 	}
 }
+
+// The single token of an earlier Cairn keeps working, as a line of the list.
+func TestMigrateToken(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set(ctx, map[string]string{"mcp.token_hash": "abc", "mcp.token_at": "2026-11-05T16:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	for range 2 { // once, however often Cairn starts
+		if s, err = store.Open(dir); err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+	}
+	list, err := s.Tokens(ctx)
+	if err != nil || len(list) != 1 || list[0].Name != "Assistant" || list[0].Created != "2026-11-05T16:00:00Z" {
+		t.Fatalf("%+v %v", list, err)
+	}
+	if _, known, err := s.TokenKnown(ctx, "abc"); err != nil || !known {
+		t.Fatalf("known %v %v", known, err)
+	}
+	if v, _ := s.Setting(ctx, "mcp.token_hash"); v != "" {
+		t.Fatalf("left in settings: %q", v)
+	}
+}
