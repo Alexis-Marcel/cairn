@@ -171,6 +171,13 @@ export function useLoad<T>(key: string | null, load: (signal: AbortSignal) => Pr
 }
 
 /** The link to Fundarr (the token never comes back). */
+export interface McpState {
+  active: boolean;
+  fromEnv: boolean;
+  readOnly: boolean;
+  createdAt: string;
+}
+
 export interface SyncState {
   linked: boolean;
   fromEnv: boolean;

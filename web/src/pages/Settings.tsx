@@ -1,7 +1,7 @@
-// Réglages: the link to Fundarr (optional), and the accounts.
+// Réglages: the link to Fundarr (optional), an assistant's token, and the accounts.
 
 import { useEffect, useId, useState } from "react";
-import { get, message, send, useLoad, type Account, type SyncState } from "../api";
+import { get, message, send, useLoad, type Account, type McpState, type SyncState } from "../api";
 import { LinkForm } from "../components/LinkForm";
 import { ago } from "../format";
 
@@ -23,6 +23,7 @@ export function Settings({
     <div className="settings">
       <h1>Réglages</h1>
       <Fundarr sync={sync} onChange={onChange} onFirstLink={onFirstLink} />
+      <Assistant />
       <Accounts rev={rev} onChange={onChange} />
       <section aria-labelledby="h-data">
         <h2 id="h-data">Fichiers</h2>
@@ -164,13 +165,7 @@ function Notify({ sync, onChange }: { sync: SyncState; onChange: () => void }) {
   const [secret, setSecret] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
   const url = `${location.origin}/api/fundarr/notify`;
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
 
   const save = async (value: string) => {
     setBusy(true);
@@ -197,16 +192,7 @@ function Notify({ sync, onChange }: { sync: SyncState; onChange: () => void }) {
         <ol>
           <li>
             Dans Fundarr, Apps → Cairn → Notify, colle cette adresse :
-            <span className="copy">
-              <code>{url}</code>
-              <button
-                type="button"
-                className="btn quiet small"
-                onClick={() => navigator.clipboard?.writeText(url).then(() => setCopied(true), () => {})}
-              >
-                {copied ? "Copié" : "Copier"}
-              </button>
-            </span>
+            <Copy value={url} />
           </li>
           <li>
             <label htmlFor={id}>Puis colle ici le secret qu'il affiche :</label>
@@ -247,6 +233,119 @@ function Notify({ sync, onChange }: { sync: SyncState; onChange: () => void }) {
         )}
       </div>
     </details>
+  );
+}
+
+/** A value to copy, with its button. */
+function Copy({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
+  return (
+    <span className="copy">
+      <code>{value}</code>
+      <button
+        type="button"
+        className="btn quiet small"
+        onClick={() => navigator.clipboard?.writeText(value).then(() => setCopied(true), () => {})}
+      >
+        {copied ? "Copié" : "Copier"}
+      </button>
+    </span>
+  );
+}
+
+/** The token an assistant reads Cairn with, over MCP. */
+function Assistant() {
+  const [rev, setRev] = useState(0);
+  const state = useLoad("mcp" + rev, (s) => get<McpState>("mcp", s));
+  const [token, setToken] = useState("");
+  const [confirm, setConfirm] = useState<"" | "replace" | "revoke">("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const act = async (f: () => Promise<unknown>) => {
+    setBusy(true);
+    setError("");
+    try {
+      await f();
+      setConfirm("");
+      setRev((r) => r + 1);
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const create = () => act(async () => setToken((await send<{ token: string }>("POST", "mcp/token")).token));
+  const revoke = () =>
+    act(async () => {
+      await send("DELETE", "mcp/token");
+      setToken("");
+    });
+
+  const mcp = state.data;
+  if (!mcp || mcp.readOnly) return null;
+  return (
+    <section aria-labelledby="h-assistant">
+      <h2 id="h-assistant">Assistant</h2>
+      <p className="muted note">
+        Laisse un assistant comme Eriphe lire ton portefeuille, sans rien pouvoir changer. Ce qu'il lit part chez le fournisseur de son modèle.
+      </p>
+      {(mcp.active || token) && (
+        <>
+          <p className="muted small-note">Adresse du serveur MCP :</p>
+          <Copy value={`${location.origin}/mcp`} />
+        </>
+      )}
+      {token && (
+        <>
+          <p className="small-note">Copie ce jeton maintenant : il ne sera plus affiché.</p>
+          <Copy value={token} />
+        </>
+      )}
+      {mcp.fromEnv ? (
+        <p className="muted small-note">Jeton fixé par l'environnement.</p>
+      ) : confirm ? (
+        <div className="confirm">
+          <p>{confirm === "replace" ? "L'ancien jeton cessera de marcher tout de suite." : "L'assistant n'aura plus accès à Cairn."}</p>
+          <div className="actions">
+            <button type="button" className={confirm === "revoke" ? "btn danger" : "btn"} onClick={confirm === "revoke" ? revoke : create} disabled={busy}>
+              {confirm === "revoke" ? "Révoquer" : "Remplacer"}
+            </button>
+            <button type="button" className="btn quiet" onClick={() => setConfirm("")} disabled={busy}>
+              Annuler
+            </button>
+          </div>
+        </div>
+      ) : mcp.active ? (
+        <>
+          {!token && mcp.createdAt && <p className="muted small-note">Jeton créé {ago(mcp.createdAt)}.</p>}
+          <div className="actions link-actions">
+            <button type="button" className="btn quiet small" onClick={() => setConfirm("replace")}>
+              Remplacer
+            </button>
+            <button type="button" className="btn quiet small" onClick={() => setConfirm("revoke")}>
+              Révoquer
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="actions">
+          <button type="button" className="btn" onClick={create} disabled={busy}>
+            Créer un jeton
+          </button>
+        </div>
+      )}
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 
