@@ -2896,6 +2896,9 @@ details summary::marker {
 .notify .btn.quiet.small {
   justify-self: start;
 }
+.token-form {
+  margin-top: 16px;
+}
 .accounts {
   list-style: none;
   margin: 0;
