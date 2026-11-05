@@ -123,7 +123,7 @@ func run(log *slog.Logger) error {
 	if linked == "" {
 		linked = "(none)"
 	}
-	log.Info("cairn", "version", version, "addr", addr, "data", data, "fundarr", linked, "fromEnv", fromEnv, "mcp", srv.MCPToken != "")
+	log.Info("cairn", "version", version, "addr", addr, "data", data, "fundarr", linked, "fromEnv", fromEnv)
 	if err := hs.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

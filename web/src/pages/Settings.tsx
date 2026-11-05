@@ -293,7 +293,7 @@ function Assistant() {
     <section aria-labelledby="h-assistant">
       <h2 id="h-assistant">Assistant</h2>
       <p className="muted note">
-        Laisse un assistant comme Eriphe lire ton portefeuille, sans rien pouvoir changer. Ce qu'il lit part chez le fournisseur de son modèle.
+        Donne à un assistant IA un accès en lecture seule à ton portefeuille, par MCP. Ce qu'il lit peut partir chez le fournisseur de son modèle.
       </p>
       {(mcp.active || token) && (
         <>
