@@ -3,7 +3,10 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,15 +14,16 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // The MCP server, at /mcp: Cairn's reads as tools, for an assistant. It is
 // read-only by construction: a tool is a GET on the API, and nothing here
-// can send another method. It answers only with the bearer token
-// (CAIRN_MCP_TOKEN), so a proxy may let this one path through its sign-in;
-// without a token the path does not exist.
+// can send another method. It answers only with the bearer token, made in
+// Réglages or fixed by CAIRN_MCP_TOKEN, so a proxy may let this one path
+// through its sign-in; without a token the path does not exist.
 
 type scopeIn struct {
 	Scope string `json:"scope,omitempty" jsonschema:"all (default), crypto or securities"`
@@ -51,28 +55,95 @@ type operationsIn struct {
 }
 
 // mcpHandler serves the tools over streamable HTTP, without sessions: each
-// call stands alone.
+// call stands alone. The token is read at each request, so a new one or its
+// revocation holds at once.
 func (s *Server) mcpHandler(api http.Handler) http.Handler {
-	if s.MCPToken == "" {
-		return http.NotFoundHandler()
-	}
 	srv := s.mcpServer(api)
 	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv },
 		&mcp.StreamableHTTPOptions{Stateless: true, DisableLocalhostProtection: true})
-	return bearer(s.MCPToken, h)
-}
-
-// bearer lets through only the requests that carry the token.
-func bearer(token string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		want, err := s.mcpHash(r.Context())
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if want == "" {
+			http.NotFound(w, r)
+			return
+		}
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+		if !ok || subtle.ConstantTimeCompare([]byte(hashToken(got)), []byte(want)) != 1 {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			writeErr(w, http.StatusUnauthorized, "Jeton refusé")
 			return
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// Setting keys of the token made in Réglages. Only its hash is kept: a copy
+// of the database gives no access. It is random, so a plain hash will do.
+const (
+	kMCPHash = "mcp.token_hash"
+	kMCPAt   = "mcp.token_at"
+)
+
+func hashToken(t string) string {
+	h := sha256.Sum256([]byte(t))
+	return hex.EncodeToString(h[:])
+}
+
+// mcpHash is the hash of the token in force, "" without one. The
+// environment's wins.
+func (s *Server) mcpHash(ctx context.Context) (string, error) {
+	if s.MCPToken != "" {
+		return hashToken(s.MCPToken), nil
+	}
+	return s.St.Setting(ctx, kMCPHash)
+}
+
+// mcpState is what Réglages shows: never the token, which is shown once.
+func (s *Server) mcpState(w http.ResponseWriter, r *http.Request) {
+	hash, err := s.mcpHash(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	at, err := s.St.Setting(r.Context(), kMCPAt)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"active": hash != "", "fromEnv": s.MCPToken != "", "readOnly": s.ReadOnly, "createdAt": at})
+}
+
+// createToken makes a token, in place of the one before, and answers it:
+// the only time it is seen.
+func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
+	if s.MCPToken != "" {
+		writeErr(w, http.StatusConflict, "Jeton fixé par l'environnement")
+		return
+	}
+	token := "crn_" + rand.Text()
+	err := s.St.Set(r.Context(), map[string]string{kMCPHash: hashToken(token), kMCPAt: s.now().Format(time.RFC3339)})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]string{"token": token})
+}
+
+// revokeToken turns /mcp off.
+func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
+	if s.MCPToken != "" {
+		writeErr(w, http.StatusConflict, "Jeton fixé par l'environnement")
+		return
+	}
+	if err := s.St.Set(r.Context(), map[string]string{kMCPHash: "", kMCPAt: ""}); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.mcpState(w, r)
 }
 
 func (s *Server) mcpServer(api http.Handler) *mcp.Server {
