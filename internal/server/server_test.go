@@ -28,12 +28,16 @@ type client struct {
 }
 
 func newClient(t *testing.T) *client {
+	s := newServer(t)
+	return &client{t: t, h: s.Handler(nil), st: s.St}
+}
+
+func newServer(t *testing.T) *Server {
 	st := testutil.Store(t)
 	eng := books.New(st, testutil.Prices(st, now))
 	eng.Now = func() time.Time { return now }
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s := &Server{St: st, Books: eng, Sync: fundarr.New(st, log), Log: log, Now: func() time.Time { return now }}
-	return &client{t: t, h: s.Handler(nil), st: st}
+	return &Server{St: st, Books: eng, Sync: fundarr.New(st, log), Log: log, Now: func() time.Time { return now }}
 }
 
 // do sends a request as Cairn's page would, and decodes the answer into out.

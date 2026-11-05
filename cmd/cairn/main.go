@@ -106,7 +106,8 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	readOnly := isTrue(env("CAIRN_READ_ONLY", ""))
-	srv := &server.Server{St: st, Books: engine, Sync: syncer, FromEnv: fromEnv, ReadOnly: readOnly, Log: log}
+	srv := &server.Server{St: st, Books: engine, Sync: syncer, FromEnv: fromEnv, ReadOnly: readOnly,
+		MCPToken: env("CAIRN_MCP_TOKEN", ""), Version: version, Log: log}
 	hs := &http.Server{Addr: addr, Handler: srv.Handler(dist), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -122,7 +123,7 @@ func run(log *slog.Logger) error {
 	if linked == "" {
 		linked = "(none)"
 	}
-	log.Info("cairn", "version", version, "addr", addr, "data", data, "fundarr", linked, "fromEnv", fromEnv)
+	log.Info("cairn", "version", version, "addr", addr, "data", data, "fundarr", linked, "fromEnv", fromEnv, "mcp", srv.MCPToken != "")
 	if err := hs.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

@@ -2,7 +2,8 @@
 //
 // Reads are GET. Every other method must be JSON sent by Cairn's own page
 // (cross-origin protection, and a content type a form cannot send), except
-// POST /api/fundarr/notify, which Fundarr calls and signs.
+// POST /api/fundarr/notify, which Fundarr calls and signs. /mcp gives the
+// reads to an assistant (mcp.go).
 package server
 
 import (
@@ -31,7 +32,11 @@ type Server struct {
 	FromEnv bool
 	// ReadOnly: a public demo (CAIRN_READ_ONLY); every write is refused.
 	ReadOnly bool
-	Log      *slog.Logger
+	// MCPToken is the bearer of /mcp (CAIRN_MCP_TOKEN); without it, no /mcp.
+	MCPToken string
+	// Version is what /mcp says it is.
+	Version string
+	Log     *slog.Logger
 	// Now is the clock (tests set it).
 	Now func() time.Time
 }
@@ -96,6 +101,7 @@ func (s *Server) Handler(dist fs.FS) http.Handler {
 	// signature is their proof.
 	mux.HandleFunc("POST /api/fundarr/notify", s.Sync.Notified)
 	mux.Handle("/api/", s.readOnly(guard(api)))
+	mux.Handle("/mcp", s.mcpHandler(api))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := s.St.Ping(r.Context()); err != nil {
 			http.Error(w, "database", http.StatusServiceUnavailable)
