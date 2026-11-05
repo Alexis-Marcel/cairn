@@ -1,4 +1,4 @@
-// Réglages: the link to Fundarr (optional), an assistant's token, and the accounts.
+// Réglages: the link to Fundarr (optional), assistants' tokens, and the accounts.
 
 import { useEffect, useId, useState } from "react";
 import { get, message, send, useLoad, type Account, type McpState, type SyncState } from "../api";
@@ -23,7 +23,7 @@ export function Settings({
     <div className="settings">
       <h1>Réglages</h1>
       <Fundarr sync={sync} onChange={onChange} onFirstLink={onFirstLink} />
-      <Assistant />
+      <Assistants />
       <Accounts rev={rev} onChange={onChange} />
       <section aria-labelledby="h-data">
         <h2 id="h-data">Fichiers</h2>
@@ -258,12 +258,13 @@ function Copy({ value }: { value: string }) {
   );
 }
 
-/** The token an assistant reads Cairn with, over MCP. */
-function Assistant() {
+/** The tokens assistants read Cairn with, over MCP: one each. */
+function Assistants() {
   const [rev, setRev] = useState(0);
   const state = useLoad("mcp" + rev, (s) => get<McpState>("mcp", s));
-  const [token, setToken] = useState("");
-  const [confirm, setConfirm] = useState<"" | "replace" | "revoke">("");
+  const [name, setName] = useState("");
+  const [fresh, setFresh] = useState<{ id: number; name: string; token: string } | null>(null);
+  const [revoking, setRevoking] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -272,7 +273,7 @@ function Assistant() {
     setError("");
     try {
       await f();
-      setConfirm("");
+      setRevoking(null);
       setRev((r) => r + 1);
     } catch (e) {
       setError(message(e));
@@ -280,65 +281,88 @@ function Assistant() {
       setBusy(false);
     }
   };
-  const create = () => act(async () => setToken((await send<{ token: string }>("POST", "mcp/token")).token));
-  const revoke = () =>
+  const create = () =>
     act(async () => {
-      await send("DELETE", "mcp/token");
-      setToken("");
+      setFresh(await send<{ id: number; name: string; token: string }>("POST", "mcp/tokens", { name }));
+      setName("");
+    });
+  const revoke = (t: number) =>
+    act(async () => {
+      await send("DELETE", `mcp/tokens/${t}`);
+      if (fresh?.id === t) setFresh(null);
     });
 
   const mcp = state.data;
   if (!mcp || mcp.readOnly) return null;
   return (
-    <section aria-labelledby="h-assistant">
-      <h2 id="h-assistant">Assistant</h2>
+    <section aria-labelledby="h-assistants">
+      <h2 id="h-assistants">Assistants</h2>
       <p className="muted note">
         Donne à un assistant IA un accès en lecture seule à ton portefeuille, par MCP. Ce qu'il lit peut partir chez le fournisseur de son modèle.
       </p>
-      {(mcp.active || token) && (
+      {(mcp.fromEnv || mcp.tokens.length > 0) && (
         <>
           <p className="muted small-note">Adresse du serveur MCP :</p>
           <Copy value={`${location.origin}/mcp`} />
         </>
       )}
-      {token && (
-        <>
-          <p className="small-note">Copie ce jeton maintenant : il ne sera plus affiché.</p>
-          <Copy value={token} />
-        </>
-      )}
       {mcp.fromEnv ? (
         <p className="muted small-note">Jeton fixé par l'environnement.</p>
-      ) : confirm ? (
-        <div className="confirm">
-          <p>{confirm === "replace" ? "L'ancien jeton cessera de marcher tout de suite." : "L'assistant n'aura plus accès à Cairn."}</p>
-          <div className="actions">
-            <button type="button" className={confirm === "revoke" ? "btn danger" : "btn"} onClick={confirm === "revoke" ? revoke : create} disabled={busy}>
-              {confirm === "revoke" ? "Révoquer" : "Remplacer"}
-            </button>
-            <button type="button" className="btn quiet" onClick={() => setConfirm("")} disabled={busy}>
-              Annuler
-            </button>
-          </div>
-        </div>
-      ) : mcp.active ? (
-        <>
-          {!token && mcp.createdAt && <p className="muted small-note">Jeton créé {ago(mcp.createdAt)}.</p>}
-          <div className="actions link-actions">
-            <button type="button" className="btn quiet small" onClick={() => setConfirm("replace")}>
-              Remplacer
-            </button>
-            <button type="button" className="btn quiet small" onClick={() => setConfirm("revoke")}>
-              Révoquer
-            </button>
-          </div>
-        </>
       ) : (
-        <div className="actions">
-          <button type="button" className="btn" onClick={create} disabled={busy}>
-            Créer un jeton
-          </button>
-        </div>
+        <>
+          {mcp.tokens.length > 0 && (
+            <ul className="accounts">
+              {mcp.tokens.map((t) => (
+                <li key={t.id}>
+                  <span className="acc-name">{t.name}</span>
+                  <span className="muted num">{t.createdAt ? `Créé ${ago(t.createdAt)}` : ""}</span>
+                  <span className="acc-actions">
+                    {revoking === t.id ? (
+                      <>
+                        <button type="button" className="btn danger small" onClick={() => revoke(t.id)} disabled={busy}>
+                          Confirmer
+                        </button>
+                        <button type="button" className="btn quiet small" onClick={() => setRevoking(null)} disabled={busy}>
+                          Annuler
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" className="btn quiet small" onClick={() => setRevoking(t.id)}>
+                        Révoquer
+                      </button>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {fresh && (
+            <>
+              <p className="small-note">Jeton pour {fresh.name}. Copie-le maintenant : il ne sera plus affiché.</p>
+              <Copy value={fresh.token} />
+            </>
+          )}
+          <form
+            className="with-action"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (name.trim()) create();
+            }}
+          >
+            <input
+              type="text"
+              aria-label="Nom de l'assistant"
+              placeholder="Nom de l'assistant"
+              maxLength={60}
+              autoComplete="off"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <button type="submit" className="btn" disabled={busy || !name.trim()}>
+              Créer un jeton
+            </button>
+          </form>
+        </>
       )}
       {error && (
         <p className="form-error" role="alert">

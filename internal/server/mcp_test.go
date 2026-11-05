@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -168,56 +169,83 @@ func TestMCPIsOffWithoutAToken(t *testing.T) {
 	}
 }
 
-type mcpState struct {
-	Active, FromEnv bool
-	CreatedAt       string
+type tokenState struct {
+	Tokens []struct {
+		ID        int64
+		Name      string
+		CreatedAt string
+	}
+	FromEnv bool
 }
 
-func TestMCPTokenFromSettings(t *testing.T) {
-	c := newClient(t)
-	create := func() string {
-		t.Helper()
-		var out struct{ Token string }
-		if code := c.do("POST", "/api/mcp/token", map[string]any{}, &out); code != 200 || !strings.HasPrefix(out.Token, "crn_") {
-			t.Fatalf("create: %d %q", code, out.Token)
-		}
-		return out.Token
+// create makes a token and gives it with its id.
+func (c *client) create(name string) (string, int64) {
+	c.t.Helper()
+	var out struct {
+		ID    int64
+		Token string
 	}
+	if code := c.do("POST", "/api/mcp/tokens", map[string]string{"name": name}, &out); code != 201 || !strings.HasPrefix(out.Token, "crn_") {
+		c.t.Fatalf("create %s: %d %q", name, code, out.Token)
+	}
+	return out.Token, out.ID
+}
 
-	first := create()
-	if code := mcpPost(c.h, "Bearer "+first); code != 200 {
-		t.Fatalf("token refused: %d", code)
+func TestMCPTokensEachForOneAssistant(t *testing.T) {
+	c := newClient(t)
+	first, firstID := c.create("Eriphe")
+	second, _ := c.create("Hermes")
+	if first == second {
+		t.Fatal("same token twice")
 	}
-	var st mcpState
-	if c.do("GET", "/api/mcp", nil, &st); !st.Active || st.FromEnv || st.CreatedAt == "" {
+	for _, tok := range []string{first, second} {
+		if code := mcpPost(c.h, "Bearer "+tok); code != 200 {
+			t.Fatalf("token refused: %d", code)
+		}
+	}
+	var st tokenState
+	c.do("GET", "/api/mcp", nil, &st)
+	if len(st.Tokens) != 2 || st.Tokens[0].Name != "Eriphe" || st.Tokens[1].Name != "Hermes" || st.Tokens[0].CreatedAt == "" || st.FromEnv {
 		t.Fatalf("state: %+v", st)
 	}
 	var raw map[string]any
 	c.do("GET", "/api/mcp", nil, &raw)
-	if b, _ := json.Marshal(raw); strings.Contains(string(b), first) {
-		t.Fatalf("state shows the token: %s", b)
-	}
-	if v, err := c.st.Setting(t.Context(), kMCPHash); err != nil || v == "" || strings.Contains(v, first) {
-		t.Fatalf("kept: %q %v", v, err)
+	if b, _ := json.Marshal(raw); strings.Contains(string(b), first) || strings.Contains(string(b), hashToken(first)) {
+		t.Fatalf("state shows a token: %s", b)
 	}
 
-	// A new one takes the place of the last, at once.
-	second := create()
-	if second == first {
-		t.Fatal("same token twice")
-	}
-	if code := mcpPost(c.h, "Bearer "+first); code != http.StatusUnauthorized {
-		t.Fatalf("old token: %d", code)
-	}
-	if code := mcpPost(c.h, "Bearer "+second); code != 200 {
-		t.Fatalf("new token: %d", code)
-	}
-
-	if code := c.do("DELETE", "/api/mcp/token", map[string]any{}, &st); code != 200 || st.Active || st.CreatedAt != "" {
+	// Revoking one leaves the other, at once.
+	if code := c.do("DELETE", fmt.Sprintf("/api/mcp/tokens/%d", firstID), map[string]any{}, &st); code != 200 || len(st.Tokens) != 1 {
 		t.Fatalf("revoke: %d %+v", code, st)
 	}
-	if code := mcpPost(c.h, "Bearer "+second); code != http.StatusNotFound {
+	if code := mcpPost(c.h, "Bearer "+first); code != http.StatusUnauthorized {
 		t.Fatalf("revoked token: %d", code)
+	}
+	if code := mcpPost(c.h, "Bearer "+second); code != 200 {
+		t.Fatalf("other token: %d", code)
+	}
+	if code := c.do("DELETE", fmt.Sprintf("/api/mcp/tokens/%d", firstID), map[string]any{}, nil); code != http.StatusNotFound {
+		t.Fatalf("revoked twice: %d", code)
+	}
+
+	// The last one gone, /mcp is off again.
+	c.do("GET", "/api/mcp", nil, &st)
+	c.do("DELETE", fmt.Sprintf("/api/mcp/tokens/%d", st.Tokens[0].ID), map[string]any{}, nil)
+	if code := mcpPost(c.h, "Bearer "+second); code != http.StatusNotFound {
+		t.Fatalf("no token left: %d", code)
+	}
+}
+
+func TestMCPTokenNames(t *testing.T) {
+	c := newClient(t)
+	c.create("Eriphe")
+	for _, tc := range []struct {
+		name string
+		code int
+	}{{"  ", 400}, {strings.Repeat("é", 61), 400}, {"eriphe", http.StatusConflict}} {
+		if code := c.do("POST", "/api/mcp/tokens", map[string]string{"name": tc.name}, nil); code != tc.code {
+			t.Errorf("%q: %d", tc.name, code)
+		}
 	}
 }
 
@@ -225,14 +253,14 @@ func TestMCPTokenFromEnvironment(t *testing.T) {
 	s := newServer(t)
 	s.MCPToken = mcpToken
 	c := &client{t: t, h: s.Handler(nil), st: s.St}
-	if code := c.do("POST", "/api/mcp/token", map[string]any{}, nil); code != http.StatusConflict {
+	if code := c.do("POST", "/api/mcp/tokens", map[string]string{"name": "x"}, nil); code != http.StatusConflict {
 		t.Fatalf("create: %d", code)
 	}
-	if code := c.do("DELETE", "/api/mcp/token", map[string]any{}, nil); code != http.StatusConflict {
+	if code := c.do("DELETE", "/api/mcp/tokens/1", map[string]any{}, nil); code != http.StatusConflict {
 		t.Fatalf("revoke: %d", code)
 	}
-	var st mcpState
-	if c.do("GET", "/api/mcp", nil, &st); !st.Active || !st.FromEnv {
+	var st tokenState
+	if c.do("GET", "/api/mcp", nil, &st); !st.FromEnv {
 		t.Fatalf("state: %+v", st)
 	}
 }
@@ -240,7 +268,7 @@ func TestMCPTokenFromEnvironment(t *testing.T) {
 // A page elsewhere cannot make itself a token, and neither can a demo.
 func TestMCPTokenIsGuarded(t *testing.T) {
 	c := newClient(t)
-	r := httptest.NewRequest("POST", "/api/mcp/token", strings.NewReader("{}"))
+	r := httptest.NewRequest("POST", "/api/mcp/tokens", strings.NewReader(`{"name":"x"}`))
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Sec-Fetch-Site", "cross-site")
 	w := httptest.NewRecorder()
@@ -252,7 +280,7 @@ func TestMCPTokenIsGuarded(t *testing.T) {
 	s := newServer(t)
 	s.ReadOnly = true
 	demo := &client{t: t, h: s.Handler(nil), st: s.St}
-	if code := demo.do("POST", "/api/mcp/token", map[string]any{}, nil); code != http.StatusForbidden {
+	if code := demo.do("POST", "/api/mcp/tokens", map[string]string{"name": "x"}, nil); code != http.StatusForbidden {
 		t.Fatalf("demo: %d", code)
 	}
 }

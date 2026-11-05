@@ -32,8 +32,8 @@ type Server struct {
 	FromEnv bool
 	// ReadOnly: a public demo (CAIRN_READ_ONLY); every write is refused.
 	ReadOnly bool
-	// MCPToken fixes the bearer of /mcp (CAIRN_MCP_TOKEN); the UI cannot
-	// change it. Without it, the token is the one made in Réglages.
+	// MCPToken fixes the bearer of /mcp (CAIRN_MCP_TOKEN), in place of the
+	// tokens made in Réglages, which cannot then change.
 	MCPToken string
 	// Version is what /mcp says it is.
 	Version string
@@ -95,8 +95,8 @@ func (s *Server) Handler(dist fs.FS) http.Handler {
 	api.HandleFunc("PUT /api/sync/secret", s.setSecret)
 
 	api.HandleFunc("GET /api/mcp", s.mcpState)
-	api.HandleFunc("POST /api/mcp/token", s.createToken)
-	api.HandleFunc("DELETE /api/mcp/token", s.revokeToken)
+	api.HandleFunc("POST /api/mcp/tokens", s.createToken)
+	api.HandleFunc("DELETE /api/mcp/tokens/{id}", s.revokeToken)
 
 	api.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "Introuvable")

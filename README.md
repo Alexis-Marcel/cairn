@@ -81,13 +81,13 @@ date,type,actif,quantite,prix,frais,recu,quantite_recue,compte,note,isin,nom
 | `FUNDARR_URL` | | Fundarr's address; fixes the link, no page to change it |
 | `FUNDARR_TOKEN` | | Fundarr read token (`fdr_…`), with `FUNDARR_URL` |
 | `FUNDARR_NOTIFY_SECRET` | | the notify secret, instead of pasting it in Réglages |
-| `CAIRN_MCP_TOKEN` | | fixes the [MCP server](#mcp-server)'s token, instead of making one in Réglages |
+| `CAIRN_MCP_TOKEN` | | fixes the [MCP server](#mcp-server)'s one token, instead of those made in Réglages |
 
 The computed reads (`/api/overview`, `/api/stats`, `/api/portfolio`, `/api/portfolio/history`) and `/api/operations` take `?scope=all|crypto|securities`. `/healthz` answers `ok`. Writes under `/api` must be JSON sent by Cairn's own page (cross-origin protection); errors come back as `{"error": "…"}`. An earlier Cairn's link (`/data/cairn.json`) is moved into the database on first start.
 
 ## MCP server
 
-Réglages → Assistant → **Créer un jeton** shows a token once and turns on `/mcp`, which gives an assistant Cairn's reads over MCP (streamable HTTP, `Authorization: Bearer <token>`): `get_overview`, `get_portfolio`, `get_history`, `get_stats`, `get_asset`, `get_tax_fr`, `list_operations`, `list_accounts`, `get_plan`. They answer what the API answers, and all are marked read-only: nothing on `/mcp` can change the portfolio. Cairn keeps only the token's hash. **Remplacer** and **Révoquer** hold at once; without a token the path answers 404. `CAIRN_MCP_TOKEN` fixes the token instead, and Réglages can then not change it.
+Réglages → Assistants makes a token for each assistant, by name, shown once. With at least one, `/mcp` gives them Cairn's reads over MCP (streamable HTTP, `Authorization: Bearer <token>`): `get_overview`, `get_portfolio`, `get_history`, `get_stats`, `get_asset`, `get_tax_fr`, `list_operations`, `list_accounts`, `get_plan`. They answer what the API answers, and all are marked read-only: nothing on `/mcp` can change the portfolio. Cairn keeps only the tokens' hashes. **Révoquer** cuts one assistant at once and leaves the others; without any token the path answers 404. `CAIRN_MCP_TOKEN` fixes a single token instead of these, and Réglages can then not change it.
 
 Behind a signing-in proxy, let `/mcp` through without sign-in, and that path alone: the token is its proof, and the rest of Cairn has none. Do not put Cairn on a network shared with what an assistant runs on instead: `/api` answers anyone who reaches it. Whatever an assistant reads goes to its model's provider.
 
