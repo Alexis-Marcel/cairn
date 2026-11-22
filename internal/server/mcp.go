@@ -32,11 +32,27 @@ type scopeIn struct {
 	Scope string `json:"scope,omitempty" jsonschema:"all (default), crypto or securities"`
 }
 
+type overviewIn struct {
+	scopeIn
+	Points *bool `json:"points,omitempty" jsonschema:"true (default) gives the whole curve; false leaves it out, to keep the answer short"`
+}
+
+type formatIn struct {
+	scopeIn
+	Format string `json:"format,omitempty" jsonschema:"series adds the data as chart series, [{name, points: [{x, y}]}]; by default none"`
+}
+
+type moversIn struct {
+	scopeIn
+	Limit int `json:"limit,omitempty" jsonschema:"how many assets in each up and down list; 5 (also the most) by default"`
+}
+
 type historyIn struct {
 	scopeIn
-	From string `json:"from,omitempty" jsonschema:"first day, YYYY-MM-DD"`
-	To   string `json:"to,omitempty" jsonschema:"last day, YYYY-MM-DD"`
-	Step string `json:"step,omitempty" jsonschema:"day (default), week or month; month keeps a long period short"`
+	Format string `json:"format,omitempty" jsonschema:"series adds the value and the money put in as chart series, [{name, points: [{x, y}]}]; by default none"`
+	From   string `json:"from,omitempty" jsonschema:"first day, YYYY-MM-DD"`
+	To     string `json:"to,omitempty" jsonschema:"last day, YYYY-MM-DD"`
+	Step   string `json:"step,omitempty" jsonschema:"day (default), week or month; month keeps a long period short"`
 }
 
 type assetIn struct {
@@ -178,16 +194,34 @@ func (s *Server) mcpServer(api http.Handler) *mcp.Server {
 	})
 	scoped := func(in scopeIn) url.Values { return values("scope", in.Scope) }
 
-	read(srv, api, "get_overview", "What the portfolio is worth, its change, gain, money put in, income and fees.",
-		func(in scopeIn) (string, url.Values) { return "/api/overview", scoped(in) })
+	read(srv, api, "get_overview", "What the portfolio is worth, its change (change.day: the last day's {gain, pct}, pct as a ratio, 0.03 is 3 %; periods: 7J, 1M, YTD, 1A, Tout), gain, money put in, income and fees. points=false leaves out the curve.",
+		func(in overviewIn) (string, url.Values) {
+			q := scoped(in.scopeIn)
+			if in.Points != nil && !*in.Points {
+				q.Set("points", "false")
+			}
+			return "/api/overview", q
+		})
 	read(srv, api, "get_portfolio", "Every asset held or sold, with quantity, value, cost and gain, and the cash of each account.",
 		func(in scopeIn) (string, url.Values) { return "/api/portfolio", scoped(in) })
-	read(srv, api, "get_history", "The portfolio's value and money put in over time.",
+	read(srv, api, "get_history", "The portfolio's value and money put in over time. format=series adds series: [{name: Valeur, points: [{x: date, y}]}, {name: Investi, ...}] ready to plot.",
 		func(in historyIn) (string, url.Values) {
-			return "/api/portfolio/history", values("scope", in.Scope, "from", in.From, "to", in.To, "step", in.Step)
+			return "/api/portfolio/history", values("scope", in.Scope, "from", in.From, "to", in.To, "step", in.Step, "format", in.Format)
 		})
-	read(srv, api, "get_stats", "Monthly returns, money put in and taken out each month, income, gain by asset.",
-		func(in scopeIn) (string, url.Values) { return "/api/stats", scoped(in) })
+	read(srv, api, "get_stats", "Monthly returns, money put in and taken out each month, income, gain by asset. format=series adds series: [{name: Rendement, points: [{x: month, y: return as a ratio}]}].",
+		func(in formatIn) (string, url.Values) {
+			return "/api/stats", values("scope", in.Scope, "format", in.Format)
+		})
+	read(srv, api, "get_movers", "The biggest rises and falls among the assets held, over 1J, 7J and 30J, from their closing prices: {\"1J\": {up: [...], down: [...]}, ...}, each item flat {id, name, pct (a ratio, 0.03 is 3 %), gain (euros, on the quantity held now), value}, up sorted from the best, down from the worst. Stablecoins and assets with no price are left out.",
+		func(in moversIn) (string, url.Values) {
+			q := scoped(in.scopeIn)
+			if in.Limit != 0 {
+				q.Set("limit", strconv.Itoa(in.Limit))
+			}
+			return "/api/movers", q
+		})
+	read(srv, api, "get_allocation", "Each line of the plan against what is held, as percent of everything invested: rows [{id, name, share, target, gap (points), state (ok or hors écart: the gap beyond half the plan's band), value}], with a last row \"Hors plan\" for assets in no line (its target is 0), and series [{name, points: [{x: Aujourd'hui, y}, {x: Cible, y}]}] ready to plot.",
+		func(struct{}) (string, url.Values) { return "/api/allocation", nil })
 	read(srv, api, "get_asset", "One asset: its price history, quantity held, average cost, gains, rewards or dividends, fees.",
 		func(in assetIn) (string, url.Values) { return "/api/assets/" + url.PathEscape(in.Symbol), nil })
 	read(srv, api, "get_tax_fr", "One year of crypto disposals as lines of the French form 2086, with totals and the estimated tax. Stocks and ETFs are left out.",

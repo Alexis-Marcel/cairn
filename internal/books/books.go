@@ -386,6 +386,15 @@ func (e *Engine) Portfolio(ctx context.Context, scope string) ([]byte, error) {
 
 // History is GET /api/portfolio/history?from=&to=&step=.
 func (e *Engine) History(ctx context.Context, from, to, step, scope string) ([]byte, error) {
+	return e.HistoryAs(ctx, from, to, step, scope, "")
+}
+
+// HistoryAs is History with, for format "series", the value and the money
+// put in also as chart series.
+func (e *Engine) HistoryAs(ctx context.Context, from, to, step, scope, format string) ([]byte, error) {
+	if err := checkFormat(format); err != nil {
+		return nil, err
+	}
 	scope, err := ParseScope(scope)
 	if err != nil {
 		return nil, err
@@ -410,7 +419,7 @@ func (e *Engine) History(ctx context.Context, from, to, step, scope string) ([]b
 		}
 		*d.to = v
 	}
-	return e.cached(ctx, "history?"+from+"&"+to+"&"+step+"&"+scope, func(l *Ledger, p *pricer) (any, error) {
+	return e.cached(ctx, "history?"+from+"&"+to+"&"+step+"&"+scope+"&"+format, func(l *Ledger, p *pricer) (any, error) {
 		l = p.scoped(l, scope)
 		today := e.Now().Truncate(24 * time.Hour)
 		m := p.money(l)
@@ -430,7 +439,11 @@ func (e *Engine) History(ctx context.Context, from, to, step, scope string) ([]b
 			Invested string `json:"invested"`
 		}
 		if start.IsZero() || start.After(end) {
-			return map[string]any{"currency": Currency, "points": []point{}, "unpriced": []model.Asset{}}, nil
+			res := map[string]any{"currency": Currency, "points": []point{}, "unpriced": []model.Asset{}}
+			if format == FormatSeries {
+				res["series"] = []Series{{Name: "Valeur", Points: []Point{}}, {Name: "Investi", Points: []Point{}}}
+			}
+			return res, nil
 		}
 		days := portfolio.Days(start, end, step)
 		if days == nil {
@@ -442,7 +455,17 @@ func (e *Engine) History(ctx context.Context, from, to, step, scope string) ([]b
 		for n, pt := range points {
 			out = append(out, point{pt.Day.Format(time.DateOnly), money(pt.Value.Add(cash[n].Cash)), money(cash[n].Invested)})
 		}
-		return map[string]any{"currency": Currency, "points": out, "unpriced": assets(unpriced)}, nil
+		res := map[string]any{"currency": Currency, "points": out, "unpriced": assets(unpriced)}
+		if format == FormatSeries {
+			value, invested := make([]Point, len(out)), make([]Point, len(out))
+			for n, pt := range out {
+				v, _ := strconv.ParseFloat(pt.Value, 64)
+				i, _ := strconv.ParseFloat(pt.Invested, 64)
+				value[n], invested[n] = Point{pt.Date, v}, Point{pt.Date, i}
+			}
+			res["series"] = []Series{{Name: "Valeur", Points: value}, {Name: "Investi", Points: invested}}
+		}
+		return res, nil
 	})
 }
 
