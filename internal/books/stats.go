@@ -6,6 +6,7 @@ package books
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -147,11 +148,17 @@ func periods(days []perf.Day, today time.Time) []Period {
 // Overview is GET /api/overview: the value day by day with the money put
 // in and the time-weighted index, each period's change, and the totals.
 func (e *Engine) Overview(ctx context.Context, scope string) ([]byte, error) {
+	return e.OverviewPoints(ctx, scope, true)
+}
+
+// OverviewPoints is Overview with the choice to leave out the curve (the
+// points), which is most of its weight.
+func (e *Engine) OverviewPoints(ctx context.Context, scope string, withPoints bool) ([]byte, error) {
 	scope, err := ParseScope(scope)
 	if err != nil {
 		return nil, err
 	}
-	return e.cached(ctx, "overview?"+scope, func(l *Ledger, p *pricer) (any, error) {
+	return e.cached(ctx, fmt.Sprintf("overview?%s&%t", scope, withPoints), func(l *Ledger, p *pricer) (any, error) {
 		l = p.scoped(l, scope)
 		at := e.Now()
 		today := at.Truncate(dayLen)
@@ -194,12 +201,12 @@ func (e *Engine) Overview(ctx context.Context, scope string) ([]byte, error) {
 		for k, v := range classes {
 			classes[k] = r2(v)
 		}
-		return map[string]any{
+		out := map[string]any{
 			"currency": Currency,
 			"at":       at,
 			"step":     s.step,
-			"points":   pts,
 			"periods":  periods(s.days, today),
+			"change":   map[string]any{"day": dayChange(s.days)},
 			"total": map[string]any{
 				"value": r2(value), "invested": r2(invested), "gain": r2(value - invested),
 				"realized": r2(f64(sum.Realized)), "unrealized": r2(f64(sum.Unrealized)),
@@ -212,8 +219,60 @@ func (e *Engine) Overview(ctx context.Context, scope string) ([]byte, error) {
 			},
 			"classes":  classes,
 			"unpriced": assets(append(sum.Unpriced, m.unpricedCash(scope, p.memoize, at)...)),
-		}, nil
+		}
+		if withPoints {
+			out["points"] = pts
+		}
+		return out, nil
 	})
+}
+
+// Change is a gain and its ratio (0.03 is 3 %), for change.day.
+type Change struct {
+	Gain float64 `json:"gain"`
+	// Pct: nil when nothing was at stake.
+	Pct *float64 `json:"pct"`
+}
+
+// dayChange is the last day's change, from the value of the eve to the last
+// value, the money put in during the day set aside as periods does. Nil when
+// there is no eve (a history of one day, or kept by the week).
+func dayChange(days []perf.Day) *Change {
+	if len(days) < 2 {
+		return nil
+	}
+	last, eve := days[len(days)-1], days[len(days)-2]
+	if last.T.Sub(eve.T) != dayLen {
+		return nil
+	}
+	c := &Change{Gain: r2(last.Value - last.Invested - (eve.Value - eve.Invested))}
+	if pct, ok := perf.Simple(eve.Value, eve.Invested, last.Value, last.Invested); ok {
+		pct = r6(pct)
+		c.Pct = &pct
+	}
+	return c
+}
+
+// FormatSeries asks for the data also as chart series.
+const FormatSeries = "series"
+
+func checkFormat(format string) error {
+	if format != "" && format != FormatSeries {
+		return &Error{400, "format : series, ou rien"}
+	}
+	return nil
+}
+
+// Point is a chart's point; Series a named line of them, the shape a chart
+// reads without more work (format=series).
+type Point struct {
+	X string  `json:"x"`
+	Y float64 `json:"y"`
+}
+
+type Series struct {
+	Name   string  `json:"name"`
+	Points []Point `json:"points"`
 }
 
 // coinView is one coin's results.
@@ -295,11 +354,20 @@ func coins(r *replay, sum portfolio.Summary, total decimal.Decimal) []coinView {
 // Stats is GET /api/stats: month by month (returns, money in and out,
 // rewards, value and invested), and each coin's results.
 func (e *Engine) Stats(ctx context.Context, scope string) ([]byte, error) {
+	return e.StatsAs(ctx, scope, "")
+}
+
+// StatsAs is Stats with, for format "series", the monthly returns also as a
+// chart's series.
+func (e *Engine) StatsAs(ctx context.Context, scope, format string) ([]byte, error) {
 	scope, err := ParseScope(scope)
 	if err != nil {
 		return nil, err
 	}
-	return e.cached(ctx, "stats?"+scope, func(l *Ledger, p *pricer) (any, error) {
+	if err := checkFormat(format); err != nil {
+		return nil, err
+	}
+	return e.cached(ctx, "stats?"+scope+"&"+format, func(l *Ledger, p *pricer) (any, error) {
 		l = p.scoped(l, scope)
 		at := e.Now()
 		today := at.Truncate(dayLen)
@@ -367,8 +435,16 @@ func (e *Engine) Stats(ctx context.Context, scope string) ([]byte, error) {
 				}
 			}
 		}
-		return map[string]any{"currency": Currency, "at": at, "months": months, "assets": list,
-			"cash": cashView(l, cashList, sum.Value.Add(cash))}, nil
+		out := map[string]any{"currency": Currency, "at": at, "months": months, "assets": list,
+			"cash": cashView(l, cashList, sum.Value.Add(cash))}
+		if format == FormatSeries {
+			ret := make([]Point, len(months))
+			for n, m := range months {
+				ret[n] = Point{m.M, m.Return}
+			}
+			out["series"] = []Series{{Name: "Rendement", Points: ret}}
+		}
+		return out, nil
 	})
 }
 

@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,6 +67,8 @@ func (s *Server) Handler(dist fs.FS) http.Handler {
 	api.HandleFunc("GET /api/tax/fr", s.taxFR)
 	api.HandleFunc("GET /api/activities", s.activities)
 
+	api.HandleFunc("GET /api/movers", s.movers)
+	api.HandleFunc("GET /api/allocation", s.allocation)
 	api.HandleFunc("GET /api/plan", s.getPlan)
 	api.HandleFunc("PUT /api/plan", s.putPlan)
 
@@ -247,7 +250,7 @@ func (s *Server) portfolio(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	b, err := s.Books.History(r.Context(), q.Get("from"), q.Get("to"), q.Get("step"), q.Get("scope"))
+	b, err := s.Books.HistoryAs(r.Context(), q.Get("from"), q.Get("to"), q.Get("step"), q.Get("scope"), q.Get("format"))
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -256,7 +259,17 @@ func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
-	b, err := s.Books.Overview(r.Context(), r.URL.Query().Get("scope"))
+	q := r.URL.Query()
+	points := true
+	switch q.Get("points") {
+	case "", "true":
+	case "false":
+		points = false
+	default:
+		writeErr(w, http.StatusBadRequest, "points : true ou false")
+		return
+	}
+	b, err := s.Books.OverviewPoints(r.Context(), q.Get("scope"), points)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -265,7 +278,45 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
-	b, err := s.Books.Stats(r.Context(), r.URL.Query().Get("scope"))
+	q := r.URL.Query()
+	b, err := s.Books.StatsAs(r.Context(), q.Get("scope"), q.Get("format"))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeRaw(w, b)
+}
+
+func (s *Server) movers(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit := 0
+	if raw := q.Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			writeErr(w, http.StatusBadRequest, "limit : un nombre entier, 1 au moins")
+			return
+		}
+		limit = n
+	}
+	b, err := s.Books.Movers(r.Context(), q.Get("scope"), limit)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeRaw(w, b)
+}
+
+func (s *Server) allocation(w http.ResponseWriter, r *http.Request) {
+	p, err := s.plan(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	lines := make([]books.PlanLine, len(p.Lines))
+	for i, l := range p.Lines {
+		lines[i] = books.PlanLine{ID: l.ID, Kind: l.Kind, Name: l.Name, Share: l.Share}
+	}
+	b, err := s.Books.Allocation(r.Context(), lines, p.Band)
 	if err != nil {
 		s.fail(w, r, err)
 		return

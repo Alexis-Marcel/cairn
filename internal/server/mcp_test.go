@@ -75,7 +75,7 @@ func TestMCPToolsAreAllReads(t *testing.T) {
 		}
 	}
 	slices.Sort(names)
-	want := []string{"get_asset", "get_history", "get_overview", "get_plan", "get_portfolio", "get_stats", "get_tax_fr",
+	want := []string{"get_allocation", "get_asset", "get_history", "get_movers", "get_overview", "get_plan", "get_portfolio", "get_stats", "get_tax_fr",
 		"list_accounts", "list_operations"}
 	if !slices.Equal(names, want) {
 		t.Fatalf("tools: %v", names)
@@ -98,6 +98,12 @@ func TestMCPAnswersWhatTheAPIAnswers(t *testing.T) {
 		{"list_operations", map[string]any{"asset": "BTC", "limit": 1}, "/api/operations?asset=BTC&limit=1"},
 		{"list_accounts", nil, "/api/accounts"},
 		{"get_plan", nil, "/api/plan"},
+		{"get_overview", map[string]any{"points": false}, "/api/overview?points=false"},
+		{"get_overview", map[string]any{"points": true}, "/api/overview"},
+		{"get_history", map[string]any{"format": "series"}, "/api/portfolio/history?format=series"},
+		{"get_stats", map[string]any{"format": "series"}, "/api/stats?format=series"},
+		{"get_movers", map[string]any{"limit": 3}, "/api/movers?limit=3"},
+		{"get_allocation", nil, "/api/allocation"},
 	} {
 		res := call(t, s, tc.tool, tc.args)
 		if res.IsError {
@@ -282,5 +288,48 @@ func TestMCPTokenIsGuarded(t *testing.T) {
 	demo := &client{t: t, h: s.Handler(nil), st: s.St}
 	if code := demo.do("POST", "/api/mcp/tokens", map[string]string{"name": "x"}, nil); code != http.StatusForbidden {
 		t.Fatalf("demo: %d", code)
+	}
+}
+
+func TestMCPNewReads(t *testing.T) {
+	_, s := mcpSession(t)
+	var m map[string]struct{ Up, Down []any }
+	if err := json.Unmarshal([]byte(text(t, call(t, s, "get_movers", nil))), &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"1J", "7J", "30J"} {
+		if m[k].Up == nil || m[k].Down == nil {
+			t.Errorf("%s: lists are missing", k)
+		}
+	}
+	var a struct {
+		Rows   []any
+		Series []any
+	}
+	if err := json.Unmarshal([]byte(text(t, call(t, s, "get_allocation", nil))), &a); err != nil {
+		t.Fatal(err)
+	}
+	if a.Rows == nil || a.Series == nil {
+		t.Fatalf("%+v", a)
+	}
+	var o map[string]any
+	json.Unmarshal([]byte(text(t, call(t, s, "get_overview", map[string]any{"points": false}))), &o)
+	if _, ok := o["points"]; ok {
+		t.Error("points=false keeps the curve")
+	}
+	if _, ok := o["change"].(map[string]any)["day"]; !ok {
+		t.Errorf("no change.day: %v", o["change"])
+	}
+	for _, tc := range []struct {
+		tool string
+		args map[string]any
+	}{
+		{"get_movers", map[string]any{"limit": 6}},
+		{"get_history", map[string]any{"format": "pie"}},
+		{"get_stats", map[string]any{"format": "pie"}},
+	} {
+		if !call(t, s, tc.tool, tc.args).IsError {
+			t.Errorf("%s %v: accepted", tc.tool, tc.args)
+		}
 	}
 }
